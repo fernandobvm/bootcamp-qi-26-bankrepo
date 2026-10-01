@@ -90,29 +90,77 @@ erDiagram
 
 ### Fluxos
 
-> *Para cada operação principal, dois caminhos:*
->
-> - *o **caminho feliz**, em passos numerados ou diagrama de sequência;*
-> - ***pelo menos um caminho de falha** — o mais provável ou o mais caro.*
->
-> *Onde houver transação, concorrência ou retentativa, o passo diz o que acontece: o que é travado,
-> o que é desfeito, o que o cliente recebe de volta. Não entra aqui: repetir o que a tabela de rotas
-> já disse.*
+**Transferência — caminho feliz e falhas (404, 409, 422, reenvio idempotente)**
 
-**\<operação\> — caminho feliz**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Sistema chamador
+    participant API as API (controller)
+    participant DB as PostgreSQL
 
-1. …
-2. …
+    S->>API: POST /accounts/{out}/transfers (account_id_in, value, idempotency_key)
+    API->>API: valida schema (value > 0), senão 400
+    API->>DB: BEGIN
+    API->>DB: SELECT account WHERE id IN (out, in) ORDER BY id FOR UPDATE
+    Note over DB: trava as duas linhas em ordem de id (evita deadlock)
+    API->>DB: SELECT transaction WHERE account_out_id = out AND idempotency_key = k
+    alt chave já usada
+        alt mesmo payload (request_hash igual)
+            API->>DB: ROLLBACK
+            API-->>S: 201 com a transação original
+        else payload diferente
+            API->>DB: ROLLBACK
+            API-->>S: 409 chave reutilizada com outro payload
+        end
+    else chave nova
+        alt origem ou destino inexistente
+            API->>DB: ROLLBACK
+            API-->>S: 404
+        else alguma conta não está ATIVA
+            API->>DB: ROLLBACK
+            API-->>S: 409 conta inativa
+        else saldo da origem < value
+            API->>DB: ROLLBACK
+            API-->>S: 422 saldo insuficiente
+        else tudo ok
+            API->>DB: INSERT transaction (idempotency_key, request_hash, value)
+            API->>DB: INSERT ledger_entry DEBITO (out) e CREDITO (in)
+            API->>DB: UPDATE account SET balance = balance - value (out)
+            API->>DB: UPDATE account SET balance = balance + value (in)
+            API->>DB: COMMIT (libera as travas)
+            API-->>S: 201 transaction_id
+        end
+    end
+```
 
-**\<operação\> — falha: \<qual\>**
+**Transferência — falha: duas requisições concorrentes na mesma conta**
 
-1. …
-2. …
+```mermaid
+sequenceDiagram
+    participant R1 as Req 1 (débito R$80)
+    participant DB as PostgreSQL
+    participant R2 as Req 2 (débito R$80)
+
+    Note over DB: conta X com saldo 100
+    R1->>DB: SELECT conta X FOR UPDATE
+    DB-->>R1: saldo 100 (trava obtida)
+    R2->>DB: SELECT conta X FOR UPDATE
+    Note over R2,DB: R2 fica bloqueada esperando a trava
+    R1->>DB: INSERT transaction e ledger, UPDATE saldo = 20
+    R1->>DB: COMMIT
+    Note over DB: trava liberada
+    DB-->>R2: saldo 20 (lê o valor já atualizado)
+    R2->>DB: ROLLBACK
+    Note over R2: responde 422 saldo insuficiente
+```
+
+**Pagamento — caminho feliz e falhas**
+
+Mesmo fluxo da transferência, travando só a conta de origem e gravando só o lançamento de débito.
 
 > ## Principal desafio
 >
-> *Mova este bloco para a seção onde o seu desafio está; apague daqui se não for aqui.*
->
-> - **Qual é:** \<a parte do problema que resiste\>
-> - **Por que é difícil:** \<o que entra em tensão, ou o cenário que quebra a solução óbvia\>
-> - **Como o desenho resolve:** \<o mecanismo concreto, não a intenção\>
+> - **Qual é:** garantir que o saldo nunca fique negativo nem seja debitado duas vezes quando há requisições concorrentes sobre a mesma conta, sejam operações diferentes ou o reenvio da mesma.
+> - **Por que é difícil:** a solução óbvia (ler o saldo, comparar, gravar) tem um intervalo entre a leitura e a gravação. Nesse intervalo, outra requisição lê o mesmo saldo e as duas debitam. Na transferência há uma tensão a mais: travar duas contas em ordem arbitrária leva a deadlock entre A→B e B→A.
+> - **Como o desenho resolve:** as contas envolvidas são travadas com `SELECT … FOR UPDATE` em ordem crescente de `account_id`. Em seguida vem a checagem de idempotência, depois a de saldo e status, e por fim a gravação de `transaction`, `ledger_entry` e saldo, tudo na mesma transação. A trava só é liberada no `COMMIT`. Quem chega depois espera, lê o saldo já atualizado e recebe `422` se não couber. O reenvio com a mesma chave encontra a transação gravada e recebe o `201` original. O `UNIQUE(account_out_id, idempotency_key)` barra o caso residual.
