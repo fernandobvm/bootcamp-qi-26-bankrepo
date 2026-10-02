@@ -1,0 +1,285 @@
+# RFC — Caixinha de Equilíbrio: reter a renda dos dias bons para completar os dias fracos
+
+| | |
+|---|---|
+| **Time** | Fernando Mendes · Victor Kazunori · Matheus Reis |
+| **Data** | 02/10/2026 |
+| **Versão** | 1 (módulo Caixinha — complementa o RFC "o banco dos entregadores de aplicativos") |
+
+## Contextualização
+
+### Entendendo o problema
+
+O entregador recebe por dia, e o valor de cada dia é imprevisível: um sábado de chuva vale o triplo de
+uma terça parada. A Caixinha de Equilíbrio dá previsibilidade a essa renda: fecha cada dia, compara a
+renda do dia com a média recente do próprio cliente, guarda parte do que passou da média e, nos dias
+abaixo dela, devolve o suficiente para chegar a um piso. Quem chama o serviço são outros sistemas
+(o app do banco e um agendador interno), identificados pelo token interno do time.
+
+O módulo precisa sustentar cinco garantias:
+
+- **Conservação do dinheiro:** o dinheiro só anda entre a conta e a caixinha do mesmo cliente; toda
+  retenção, liberação e resgate é uma `transaction` do time, com lançamento na conta e na caixinha na
+  mesma transação de banco. Se falhar, o saldo some de um lado sem aparecer no outro.
+- **Um fechamento por dia:** cada dia de cada caixinha é fechado uma vez só; repetir o fechamento não
+  retém nem libera de novo. Se falhar, o agendador que reenvia o pedido retém duas vezes.
+- **Regra reproduzível:** a média, o piso e o teto usados em cada fechamento ficam gravados; o mesmo
+  dia, refeito no papel, dá o mesmo valor. Se falhar, não há como explicar ao cliente por que o banco
+  reteve R$ 50.
+- **Nunca negativo:** a retenção não deixa a conta negativa e a liberação não passa do saldo da
+  caixinha, mesmo com uma transferência do cliente chegando no mesmo instante.
+- **Liquidez:** o cliente resgata o saldo da caixinha quando quiser; o dinheiro é dele.
+
+A receita do banco vem do *float*: o saldo somado das caixinhas fica parado em média vários dias e é
+aplicado pela tesouraria em ativos de liquidez diária.
+
+Fora do escopo desta entrega: a aplicação financeira do saldo (tesouraria), rendimento repassado ao
+cliente, o agendador em si, encerramento da caixinha, seguro de moto/vida/trabalho.
+
+### Explicando a solução de forma macro
+
+Cada conta pode ter uma `smoothing_box` (a caixinha), com saldo próprio e um percentual de retenção
+escolhido pelo cliente. Uma vez por dia o agendador pede o **fechamento do dia anterior**: a API trava a
+conta e a caixinha, soma os créditos de renda do dia no ledger, lê a renda dos últimos 28 fechamentos
+gravados, calcula a média e classifica o dia em **ACIMA**, **NEUTRO** ou **ABAIXO**. Acima, move parte
+do excedente da conta para a caixinha; abaixo, move da caixinha para a conta o que falta para o piso. O
+movimento reutiliza `transaction` e `ledger_entry` do time, e o fechamento grava a média, as faixas e o
+valor movido em `daily_closing`, uma linha por dia, com `UNIQUE(box_id, reference_date)`.
+
+Alternativas descartadas:
+
+- **Reter a cada crédito, em tempo real** — descartada porque a média do dia só se conhece quando o dia
+  acaba, e cada crédito disputaria a trava da conta com as transferências. Ganharia se os clientes
+  gastassem quase tudo antes do fim do dia, a ponto de o fechamento não achar saldo para reter.
+- **Recalcular a média direto do ledger a cada fechamento** — descartada porque relê 28 dias de
+  lançamentos a cada pedido e o resultado muda se um crédito antigo for estornado; o dia já fechado
+  deixaria de bater. Ganharia se a regra mudasse e fosse preciso recalcular o histórico.
+- **Faixas por desvio-padrão em vez de ±10% da média** — descartada porque com 14 a 28 dias o desvio é
+  instável e difícil de explicar ao cliente. Ganharia com histórico longo e renda mais regular.
+- **Caixinha como segunda `account` do cliente** — descartada porque quebra a garantia de uma única
+  conta ativa por cliente e deixaria a caixinha receber transferências de terceiros. Ganharia se o
+  banco tivesse vários produtos com saldo separado.
+
+## Implementação
+
+### Rotas
+
+| Método | Caminho | O que faz | Entrada (campos que importam) | Saídas (status e quando) |
+|---|---|---|---|---|
+| `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404` conta inexistente (código do RFC do time); `409 EB002002` a conta já tem caixinha; `409 EB002003` conta não está `ATIVA` |
+| `GET` | `/accounts/{account_id}/smoothing-box` | Devolve saldo, percentual, status, a média atual, o piso, o teto e o último dia fechado | `account_id` no caminho | `200`; `404 EB002001` conta sem caixinha |
+| `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001`; `404 EB002001`; `409 EB002008` pedido para o status em que ela já está |
+| `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001`; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002004` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002005` `reference_date` é hoje, futuro ou anterior a `activated_on` |
+| `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato ou `start_date` > `end_date`; `404 EB002001` |
+| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos; `200` repetição com a mesma chave e o mesmo corpo; `400 EB000001` valor ≤ 0; `404 EB002001`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente |
+
+Todas as rotas exigem o token interno do time; sem ele, `403`. Valores em centavos, inteiros — nunca
+`float`. Datas no fuso `America/Sao_Paulo`.
+
+### Banco de Dados (Somente diagrama)
+
+```mermaid
+erDiagram
+    ACCOUNT ||--o| SMOOTHING_BOX : "tem no maximo uma"
+    SMOOTHING_BOX ||--o{ DAILY_CLOSING : "fecha um por dia"
+    SMOOTHING_BOX ||--o{ BOX_ENTRY : "movimenta"
+    TRANSACTION ||--o| BOX_ENTRY : "lado da caixinha"
+    TRANSACTION ||--|{ LEDGER_ENTRY : "lado da conta"
+    DAILY_CLOSING |o--o| TRANSACTION : "gerou, se moveu dinheiro"
+
+    ACCOUNT {
+        int id PK "do RFC do time"
+        bigint balance "travada com FOR UPDATE"
+        varchar status "ATIVA, SUSPENSA, ENCERRADA"
+    }
+    TRANSACTION {
+        int id PK "do RFC do time"
+        varchar idempotency_key UK "fechamento usa closing:box_id:data"
+        varchar type "+ BOX_RETENTION, BOX_RELEASE, BOX_WITHDRAWAL"
+        timestamp created_at
+    }
+    LEDGER_ENTRY {
+        int id PK "do RFC do time"
+        int transaction_id FK
+        int account_id FK
+        varchar direction "DEBIT, CREDIT"
+        bigint value
+        timestamp created_at "define o dia da renda"
+    }
+    SMOOTHING_BOX {
+        int id PK
+        uuid box_key UK "sai na resposta"
+        int account_id FK "UK, uma caixinha por conta"
+        bigint balance "CHECK balance >= 0"
+        smallint retention_pct "CHECK 20 a 80"
+        varchar status "ACTIVE, PAUSED"
+        date activated_on "primeiro dia fechavel"
+        timestamp created_at "default NOW()"
+        timestamp updated_at
+    }
+    DAILY_CLOSING {
+        int id PK
+        uuid closing_key UK "sai na resposta"
+        int box_id FK "UK junto com reference_date"
+        date reference_date "UK junto com box_id"
+        bigint income "renda do dia"
+        bigint baseline "media usada, congelada"
+        smallint window_days "quantos dias entraram na media"
+        bigint lower_bound "piso = 90 pct da media"
+        bigint upper_bound "teto = 110 pct da media"
+        varchar band "WARMUP, ABOVE, NEUTRAL, BELOW, PAUSED"
+        bigint amount_calculated "o que a regra pediu"
+        bigint amount_moved "o que de fato moveu"
+        int transaction_id FK "null quando nada moveu"
+        timestamp created_at "default NOW()"
+    }
+    BOX_ENTRY {
+        int id PK
+        int box_id FK
+        int transaction_id FK "UK"
+        varchar direction "CREDIT, DEBIT"
+        varchar origin "RETENTION, RELEASE, WITHDRAWAL"
+        bigint value "CHECK value > 0"
+        bigint balance_after "saldo da caixinha depois"
+        timestamp created_at "default NOW()"
+    }
+```
+
+### Fluxos
+
+**Parâmetros da regra** (constantes do módulo; só `retention_pct` é por caixinha)
+
+| Parâmetro | Valor | Por quê |
+|---|---|---|
+| Janela da média | últimos **28** fechamentos anteriores ao dia | 4 semanas: cada dia da semana pesa igual |
+| Aquecimento | primeiros **14** fechamentos: faixa `WARMUP`, nada se move | média com menos de 2 semanas é ruído |
+| Renda do dia | soma dos `ledger_entry` `CREDIT` da conta no dia, **exceto** `BOX_RELEASE` e `BOX_WITHDRAWAL` | a própria liberação não pode inflar a média |
+| Dia sem renda | entra como **0** na média | folga é renda zero de verdade; a caixinha existe para ela |
+| Teto (ACIMA) | renda > média × **1,10** | tolerância de 10% evita mexer em dia normal |
+| Piso (ABAIXO) | renda < média × **0,90** | o que a liberação garante |
+| Retenção | (renda − teto) × `retention_pct` | só o excedente acima do teto, nunca a renda base |
+| Limite da caixinha | saldo até **10 × média** | ≈ 2 semanas de renda; acima disso para de reter |
+| Arredondamento | para baixo, em centavos | nunca move um centavo a mais que a regra |
+
+**Classificação do dia** (`M` = média, `R` = renda do dia, `S` = saldo da caixinha, `C` = saldo da conta)
+
+```mermaid
+flowchart TD
+    A[Fechar dia D] --> B{Menos de 14 fechamentos?}
+    B -- sim --> W[WARMUP: grava renda, move 0]
+    B -- nao --> P{Caixinha PAUSED?}
+    P -- sim --> PZ[PAUSED: grava renda e media, move 0]
+    P -- nao --> M0{M = 0?}
+    M0 -- sim --> N[NEUTRAL: move 0]
+    M0 -- nao --> X{R comparado a M}
+    X -- "R > 1,10 M" --> UP["ABOVE: reter = min((R - 1,10 M) x pct, 10 M - S, C)"]
+    X -- "0,90 M <= R <= 1,10 M" --> N
+    X -- "R < 0,90 M" --> DN["BELOW: liberar = min(0,90 M - R, S)"]
+    UP --> T[transaction BOX_RETENTION: debita conta, credita caixinha]
+    DN --> T2[transaction BOX_RELEASE: debita caixinha, credita conta]
+```
+
+Exemplo com média R$ 200 (teto R$ 220, piso R$ 180) e retenção de 50%: num dia de R$ 320 a caixinha
+guarda (320 − 220) × 50% = **R$ 50** e o cliente fica com R$ 270; num dia de R$ 120 a caixinha devolve
+180 − 120 = **R$ 60**; numa folga (R$ 0) devolve até **R$ 180**, se houver saldo. Um fechamento `PAUSED`
+ou `WARMUP` não move dinheiro, mas grava a renda do dia: a sequência de fechamentos não tem buraco e a
+média continua contando dias de 0.
+
+**Fechar o dia — caminho feliz**
+
+```mermaid
+sequenceDiagram
+    participant Ag as Agendador
+    participant API
+    participant DB as Banco
+    Ag->>API: POST /accounts/{id}/smoothing-box/closings {reference_date: D}
+    API->>API: valida corpo, D < hoje
+    Note over API,DB: BEGIN implicito na 1a consulta
+    API->>DB: SELECT account ... FOR UPDATE
+    Note over DB: linha da conta travada
+    API->>DB: SELECT smoothing_box ... FOR UPDATE
+    Note over DB: linha da caixinha travada
+    API->>DB: SELECT daily_closing (box, D)
+    DB-->>API: nenhum
+    API->>DB: SELECT daily_closing (box, D-1)
+    DB-->>API: existe
+    API->>DB: SELECT income dos ultimos 28 fechamentos
+    API->>DB: SUM ledger_entry CREDIT de D, sem BOX_RELEASE/BOX_WITHDRAWAL
+    API->>API: media, piso, teto, faixa, valor
+    alt ABOVE ou BELOW, valor > 0
+        API->>DB: INSERT transaction (idempotency_key closing:box:D)
+        API->>DB: INSERT ledger_entry + UPDATE account.balance
+        API->>DB: INSERT box_entry + UPDATE smoothing_box.balance
+    end
+    API->>DB: INSERT daily_closing
+    API->>DB: COMMIT
+    Note over DB: travas liberadas
+    API-->>Ag: 201 {closing_key, band, baseline, amount_moved, box_balance}
+```
+
+1. Valida o corpo; `reference_date` precisa ser um dia já encerrado e não anterior a `activated_on`,
+   senão `422 EB002005` antes de qualquer consulta.
+2. Trava a conta e depois a caixinha, **sempre nessa ordem** — a mesma do resgate. A transferência do
+   time trava só a conta, então espera o fechamento terminar (milissegundos) e nunca forma ciclo.
+3. Procura o fechamento de D. Não há. Procura o de D−1 (ou D é `activated_on`). Há.
+4. Lê a renda dos últimos 28 fechamentos já gravados — números congelados, não o ledger — e soma os
+   créditos de renda de D no ledger, fora os movimentos da própria caixinha.
+5. Calcula média, piso, teto e faixa pela regra acima, já limitando pelo saldo da conta (retenção) ou da
+   caixinha (liberação), que estão travados e não mudam até o `COMMIT`.
+6. Se há valor a mover, grava uma `transaction` com `idempotency_key = closing:{box_id}:{D}`, o
+   lançamento na conta, o lançamento na caixinha e atualiza os dois saldos. Grava o `daily_closing` com
+   tudo que foi usado no cálculo. Confirma: as travas saem juntas. Responde `201`.
+
+**Fechar o dia — falha: o agendador manda o mesmo dia duas vezes ao mesmo tempo**
+
+1. A e B pedem o fechamento de D. A trava a conta; B pede a mesma trava e fica parada no banco.
+2. A calcula, move R$ 50, grava o `daily_closing` e confirma. A trava é liberada.
+3. B recebe a trava, procura o fechamento de D e o encontra. Responde `200` com o corpo do fechamento de
+   A. Nenhuma `transaction`, nenhum lançamento, saldo intacto.
+4. Se algum caminho escapar da trava, o `INSERT` de B esbarra em `UNIQUE(box_id, reference_date)` (e na
+   `idempotency_key` da `transaction`): a sessão é desfeita inteira, inclusive o movimento, e a API
+   relê e devolve o fechamento existente com `200`.
+
+**Fechar o dia — falha: o dia anterior não foi fechado**
+
+1. O agendador ficou fora do ar em D−1 e pede D. A API trava conta e caixinha, não encontra o fechamento
+   de D−1 e encerra a sessão sem `COMMIT`.
+2. Responde `409 EB002004` com `next_reference_date` = o primeiro dia aberto. O agendador fecha os dias
+   em ordem até chegar a D. Fechar fora de ordem deixaria a média de D sem o dia D−1.
+
+**Fechar o dia — falha: o cliente gastou o excedente antes do fechamento**
+
+1. A regra pede reter R$ 50, mas a conta travada tem R$ 30.
+2. A retenção move R$ 30: `amount_calculated` = 5000, `amount_moved` = 3000. A conta fica em zero, não
+   negativa. Com saldo zero, nada se move e `transaction_id` fica `null`. Responde `201` normalmente.
+
+**Resgatar — caminho feliz**
+
+1. Valida `value` > 0 e procura a `transaction` pela `idempotency_key`. Não há.
+2. Trava a conta e depois a caixinha (mesma ordem do fechamento).
+3. O saldo da caixinha cobre o valor. Grava `transaction` `BOX_WITHDRAWAL`, o débito na caixinha, o
+   crédito na conta e atualiza os dois saldos. Confirma e responde `201`.
+
+**Resgatar — falha: saldo da caixinha insuficiente, com fechamento concorrente**
+
+1. A caixinha tem R$ 100. O cliente pede R$ 100 enquanto o fechamento de um dia `BELOW` está liberando
+   R$ 60. O fechamento pegou as travas primeiro; o resgate espera na trava da conta.
+2. O fechamento confirma: caixinha com R$ 40. O resgate recebe as travas, lê R$ 40 e responde
+   `422 EB002006` com o saldo atual. Nada é gravado. A mesma chave com o mesmo corpo repetida depois
+   volta a ser avaliada; com outro corpo, `409 EB002007`.
+
+> ## Principal desafio
+>
+> - **Qual é:** fechar o dia move dinheiro com base num cálculo sobre o histórico, e esse movimento
+>   precisa acontecer exatamente uma vez por dia, com um resultado que se possa refazer depois.
+> - **Por que é difícil:** o agendador reenvia pedidos e pode rodar duas instâncias; a conta continua
+>   recebendo transferências durante o cálculo; e a solução óbvia — calcular a média relendo o ledger —
+>   devolve outro número se um crédito antigo for estornado, ou se a própria liberação da caixinha for
+>   contada como renda e inflar a média seguinte.
+> - **Como o desenho resolve:** a conta e a caixinha são travadas com `SELECT … FOR UPDATE`, sempre
+>   nessa ordem, antes de procurar o fechamento do dia; quem chega depois espera, acha o fechamento e
+>   recebe `200` sem mover nada, e `UNIQUE(box_id, reference_date)` mais a `idempotency_key`
+>   determinística da `transaction` seguram o caso que escapar. A média lê a renda já gravada nos 28
+>   `daily_closing` anteriores, não o ledger, e cada fechamento guarda a média, o piso, o teto e os
+>   valores calculado e movido; a renda do dia exclui `BOX_RELEASE` e `BOX_WITHDRAWAL`. Os fechamentos
+>   são sequenciais (`409` se faltar o dia anterior), então todo dia, inclusive a folga, entra na média.
