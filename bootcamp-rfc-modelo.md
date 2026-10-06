@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Time** | Fernando Mendes · Victor Kazunori · Matheus Reis |
-| **Data** | 29/09/2026 |
-| **Versão** | 1|
+| **Data** | 05/10/2026 |
+| **Versão** | 2 |
 
 ## Contextualização
 
@@ -18,7 +18,7 @@ A solução precisa sustentar as seguintes garantias:
 - **Garantia financeira**: uma transação só poderá ser concluída quando houver saldo suficiente na conta de origem e a conta de destino, quando aplicável, for válida e estiver ativa. A operação deverá ser atômica, garantindo que seus lançamentos ocorram integralmente ou não ocorram.
 - **Ciclo de vida da conta**: uma conta poderá assumir os status ATIVA, SUSPENSA ou ENCERRADA, respeitando as regras de transição definidas pelo sistema.
 - **Rastreabilidade financeira**: toda movimentação concluída deverá possuir registro suficiente para permitir a consulta e reconstrução do histórico da operação.
-- Consistência do saldo: operações concorrentes sobre uma mesma conta devem ser serializadas ou controladas de forma que o saldo nunca seja comprometido por operações além dos recursos disponíveis.
+- **Consistência do saldo**: operações concorrentes sobre uma mesma conta devem ser serializadas ou controladas de forma que o saldo nunca seja comprometido por operações além dos recursos disponíveis.
 - **Conservação do dinheiro:** o dinheiro só anda entre a conta e a caixinha do mesmo cliente; toda retenção, liberação e resgate é uma `transaction` do time, com lançamento na conta e na caixinha na mesma transação de banco. Se falhar, o saldo some de um lado sem aparecer no outro.
 - **Um fechamento por dia:** cada dia de cada caixinha é fechado uma vez só; repetir o fechamento não retém nem libera de novo. Se falhar, o agendador que reenvia o pedido retém duas vezes.
 - **Regra reproduzível:** a média, o piso e o teto usados em cada fechamento ficam gravados; o mesmo dia, refeito no papel, dá o mesmo valor. Se falhar, não há como explicar ao cliente por que o banco reteve R$ 50.
@@ -63,16 +63,6 @@ Alternativas descartadas:
 
 ### Rotas
 
-> *Uma linha por rota, na tabela abaixo. Regras:*
->
-> - *Status de erro **explícitos** — `400`, `404`, `409`, `422`, e em que situação cada um sai. Não
->   basta escrever "erro".*
-> - *Diga se a rota é **idempotente** e, se for, o que a torna idempotente (qual campo, qual
->   restrição). Repetir a mesma requisição é tema da Aula 2.*
-> - *Em "Entrada", só os campos que importam para a decisão — não é o schema completo.*
->
-> *Não entra aqui: código.*
-
 | Método | Caminho | O que faz | Entrada (campos que importam) | Saídas (status e quando) |
 |---|---|---|---|---|
 | `GET` | `/` | Diz qual serviço é este. <br> Aberta, sem token | - | `200`|
@@ -83,28 +73,24 @@ Alternativas descartadas:
 | `POST` | `/accounts/{account_id_out}/` <br> `transfers` | Realiza uma transferência para outra conta do banco. <br> Idempotente: `UNIQUE(account_out_id, idempotency_key)` | `account_id_out` no caminho, `account_id_in`,  `value` e `idempotency_key` no corpo | `201` com `transaction_id` (reenvio com a mesma chave devolve o `201` original); `400` `EB00XXXX` valor inválido; `404` `EB00XXXX` conta origem/destino inexistente; `409` `EB00XXXX` conta inativa ou chave reutilizada com outro payload; `422` `EB00XXXX` saldo insuficiente |
 | `POST` | `/accounts/{account_id_out}/` <br> `payments` | Realiza um pagamento para fora do banco. <br> Idempotente: `UNIQUE(account_out_id, idempotency_key)` | `account_id_out` no caminho,  `value` e `idempotency_key` no corpo | `201` com `transaction_id` (reenvio com a mesma chave devolve o `201` original); `400` `EB00XXXX` valor inválido; `404` `EB00XXXX` conta de origem inexistente; `409` `EB00XXXX` conta inativa ou chave reutilizada com outro payload; `422` `EB00XXXX` saldo insuficiente |
 | `GET` | `/accounts/{account_id}/` <br> `transactions` | Consulta o extrato de transações de uma conta | `account_id` no caminho,  `start_date` (opcional), `end_date` (opcional) | `200`; `400` `EB00XXXX` datas fora do formato ou `start_date` posterior a `end_date`; `404` `EB00XXXX` conta inexistente; `409` `EB00XXXX` conta está inativa |
-| `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404` conta inexistente (código do RFC do time); `409 EB002002` a conta já tem caixinha; `409 EB002003` conta não está `ATIVA` |
+| `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404 EB00XXXX` conta inexistente; `409 EB002002` a conta já tem caixinha; `409 EB002003` conta não está `ATIVA` |
 | `GET` | `/accounts/{account_id}/smoothing-box` | Devolve saldo, percentual, status, a média atual, o piso, o teto e o último dia fechado | `account_id` no caminho | `200`; `404 EB002001` conta sem caixinha |
 | `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001`; `404 EB002001`; `409 EB002008` pedido para o status em que ela já está |
 | `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001`; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002004` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002005` `reference_date` é hoje, futuro ou anterior a `activated_on` |
 | `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato ou `start_date` > `end_date`; `404 EB002001` |
-| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos; `200` repetição com a mesma chave e o mesmo corpo; `400 EB000001` valor ≤ 0; `404 EB002001`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente |
+| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos (reenvio com a mesma chave e o mesmo corpo devolve o `201` original); `400 EB000001` valor ≤ 0; `404 EB002001`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente |
 
-**Idempotência**: as operações financeiras (transfers e payments) exigem o campo `idempotency_key` no corpo. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente resulta em 409 Conflict.
+**Idempotência**: as operações financeiras iniciadas pelo cliente (transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente resulta em `409`. O fechamento do dia não recebe chave do cliente: a idempotência vem de `UNIQUE(box_id, reference_date)` e da chave determinística `closing:{box_id}:{reference_date}` gravada na `transaction`.
+
+Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403`. Valores monetários em `numeric(15,2)`, nunca `float`. Datas no fuso `America/Sao_Paulo`.
 
 
 ### Banco de Dados (Somente diagrama)
 
-> *Só o diagrama. Entidades, chaves, relacionamentos e os campos que importam para o desafio: o que
-> garante unicidade, o que guarda estado, o que registra quando aconteceu, o identificador que sai
-> na resposta. **Sem prosa nesta seção** — se o principal desafio do seu desenho é o modelo de
-> dados, o único texto aqui é o destaque "Principal desafio". Substitua o esqueleto abaixo pelo seu
-> diagrama.*
-
 ```mermaid
 erDiagram
     CUSTOMER ||--|| ACCOUNT : "possui"
-    ACCOUNT ||--|| SMOOTHING_BOX : "possui"
+    ACCOUNT ||--o| SMOOTHING_BOX : "possui no maximo uma"
     ACCOUNT ||--o{ TRANSACTION : "origina"
     ACCOUNT |o--o{ TRANSACTION : "recebe"
     TRANSACTION ||--|{ LEDGER_ENTRY : "gera"
@@ -113,8 +99,8 @@ erDiagram
     SMOOTHING_BOX ||--o{ BOX_ENTRY : "possui"
     TRANSACTION ||--o| BOX_ENTRY : "origina"
 
-    SMOOTHING_BOX ||--o{ DAILY_CLOSING : "possui"
-    TRANSACTION ||--o| DAILY_CLOSING : "origina"
+    SMOOTHING_BOX ||--o{ DAILY_CLOSING : "fecha um por dia"
+    TRANSACTION |o--o| DAILY_CLOSING : "origina, se moveu dinheiro"
 
     CUSTOMER {
         uuid id PK "customer_id que sai na resposta"
@@ -135,9 +121,9 @@ erDiagram
     }
     TRANSACTION {
         uuid id PK "transaction_id que sai na resposta"
-        varchar type "TRANSFER ou PAYMENT"
-        uuid account_out_id FK "conta de origem"
-        uuid account_in_id FK "conta de destino, nula no PAYMENT"
+        varchar type "TRANSFER, PAYMENT, BOX_RETENTION, BOX_RELEASE ou BOX_WITHDRAWAL"
+        uuid account_out_id FK "conta de origem; nas BOX_*, a conta dona da caixinha"
+        uuid account_in_id FK "conta de destino, nula no PAYMENT e nas BOX_*"
         numeric value "CHECK value > 0"
         varchar idempotency_key UK "UNIQUE(account_out_id, idempotency_key)"
         varchar request_hash "detecta reuso da chave com outro payload"
@@ -154,12 +140,12 @@ erDiagram
     }
     SMOOTHING_BOX {
         uuid id PK
-        uuid box_key UK
-        uuid account_id FK,UK
-        bigint balance
-        smallint retention_pct
-        string status
-        date activated_on
+        uuid box_key UK "sai na resposta"
+        uuid account_id FK,UK "uma caixinha por conta"
+        numeric balance "numeric 15,2, CHECK balance >= 0"
+        smallint retention_pct "CHECK entre 20 e 80"
+        varchar status "ACTIVE ou PAUSED"
+        date activated_on "primeiro dia fechavel"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -167,29 +153,29 @@ erDiagram
     BOX_ENTRY {
         uuid id PK
         uuid box_id FK
-        uuid transaction_id FK,UK
-        string direction
-        string origin
-        bigint value
-        bigint balance_after
+        uuid transaction_id FK,UK "um lancamento de caixinha por transacao"
+        varchar direction "DEBITO ou CREDITO"
+        varchar origin "RETENTION, RELEASE ou WITHDRAWAL"
+        numeric value "CHECK value > 0"
+        numeric balance_after "saldo da caixinha apos o lancamento"
         timestamptz created_at
     }
 
     DAILY_CLOSING {
         uuid id PK
-        uuid closing_key UK
-        uuid box_id FK
-        date reference_date
-        bigint income
-        bigint baseline
-        smallint window_days
-        bigint lower_bound
-        bigint upper_bound
-        string band
-        bigint amount_calculated
-        bigint amount_moved
-        uuid transaction_id FK
-        timestamptz created_at
+        uuid closing_key UK "sai na resposta"
+        uuid box_id FK,UK "UNIQUE(box_id, reference_date)"
+        date reference_date UK "UNIQUE(box_id, reference_date)"
+        numeric income "renda do dia"
+        numeric baseline "media usada, congelada"
+        smallint window_days "quantos dias entraram na media"
+        numeric lower_bound "piso = 0,90 x media"
+        numeric upper_bound "teto = 1,10 x media"
+        varchar band "WARMUP, ABOVE, NEUTRAL, BELOW ou PAUSED"
+        numeric amount_calculated "o que a regra pediu"
+        numeric amount_moved "o que de fato moveu"
+        uuid transaction_id FK "nulo quando nada moveu"
+        timestamptz created_at "quando o fechamento aconteceu"
     }
 ```
 
@@ -368,13 +354,13 @@ sequenceDiagram
 |---|---|---|
 | Janela da média | últimos **28** fechamentos anteriores ao dia | 4 semanas: cada dia da semana pesa igual |
 | Aquecimento | primeiros **14** fechamentos: faixa `WARMUP`, nada se move | média com menos de 2 semanas é ruído |
-| Renda do dia | soma dos `ledger_entry` `CREDIT` da conta no dia, **exceto** `BOX_RELEASE` e `BOX_WITHDRAWAL` | a própria liberação não pode inflar a média |
+| Renda do dia | soma dos `ledger_entry` `CREDITO` da conta no dia, **exceto** `BOX_RELEASE` e `BOX_WITHDRAWAL` | a própria liberação não pode inflar a média |
 | Dia sem renda | entra como **0** na média | folga é renda zero de verdade; a caixinha existe para ela |
 | Teto (ACIMA) | renda > média × **1,10** | tolerância de 10% evita mexer em dia normal |
 | Piso (ABAIXO) | renda < média × **0,90** | o que a liberação garante |
 | Retenção | (renda − teto) × `retention_pct` | só o excedente acima do teto, nunca a renda base |
 | Limite da caixinha | saldo até **10 × média** | ≈ 2 semanas de renda; acima disso para de reter |
-| Arredondamento | para baixo, em centavos | nunca move um centavo a mais que a regra |
+| Arredondamento | para baixo, na segunda casa decimal (centavo) | nunca move um centavo a mais que a regra |
 
 **Classificação do dia** (`M` = média, `R` = renda do dia, `S` = saldo da caixinha, `C` = saldo da conta)
 
@@ -419,7 +405,7 @@ sequenceDiagram
     API->>DB: SELECT daily_closing (box, D-1)
     DB-->>API: existe
     API->>DB: SELECT income dos ultimos 28 fechamentos
-    API->>DB: SUM ledger_entry CREDIT de D, sem BOX_RELEASE/BOX_WITHDRAWAL
+    API->>DB: SUM ledger_entry CREDITO de D, sem BOX_RELEASE/BOX_WITHDRAWAL
     API->>API: media, piso, teto, faixa, valor
     alt ABOVE ou BELOW, valor > 0
         API->>DB: INSERT transaction (idempotency_key closing:box:D)
@@ -465,7 +451,7 @@ sequenceDiagram
 **Fechar o dia — falha: o cliente gastou o excedente antes do fechamento**
 
 1. A regra pede reter R$ 50, mas a conta travada tem R$ 30.
-2. A retenção move R$ 30: `amount_calculated` = 5000, `amount_moved` = 3000. A conta fica em zero, não
+2. A retenção move R$ 30: `amount_calculated` = 50,00, `amount_moved` = 30,00. A conta fica em zero, não
    negativa. Com saldo zero, nada se move e `transaction_id` fica `null`. Responde `201` normalmente.
 
 **Resgatar — caminho feliz**
