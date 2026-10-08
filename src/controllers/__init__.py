@@ -1,1 +1,2 @@
 from controllers.sample_entity_controller import SampleEntityController
+from controllers.smoothing_box_controller import SmoothingBoxController

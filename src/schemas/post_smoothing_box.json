@@ -1,0 +1,12 @@
+{
+  "title": "PostSmoothingBox",
+  "type": "object",
+  "properties": {
+    "retention_pct": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 80
+    }
+  },
+  "additionalProperties": false
+}

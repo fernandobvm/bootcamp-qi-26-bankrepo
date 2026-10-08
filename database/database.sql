@@ -34,3 +34,115 @@ CREATE TABLE sample_entity_status_event(
     event_datetime                  TIMESTAMP NOT NULL,
     created_at                      TIMESTAMP NOT NULL DEFAULT(NOW())
 );
+
+-- --------------------------------------------------------------------
+-- Nucleo do banco (customer, account, transaction, ledger_entry)
+-- --------------------------------------------------------------------
+-- Versao MINIMA, escrita na branch da caixinha so para ela ter onde se
+-- apoiar. Segue o diagrama do RFC; as rotas destas tabelas sao do time
+-- e entram na branch da solucao principal.
+
+CREATE TABLE customer(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_number                 CHAR(14) NOT NULL,
+    name                            VARCHAR(255) NOT NULL,
+    nationality                     VARCHAR(100) NOT NULL,
+    email                           VARCHAR(255) NOT NULL,
+    birth_date                      DATE NOT NULL,
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(document_number)
+);
+
+CREATE TABLE account(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id                     UUID NOT NULL REFERENCES customer(id),
+    balance                         NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    status                          VARCHAR(20) NOT NULL DEFAULT 'ATIVA'
+                                        CHECK (status IN ('ATIVA', 'SUSPENSA', 'ENCERRADA')),
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(customer_id)
+);
+
+CREATE TABLE transaction(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type                            VARCHAR(30) NOT NULL
+                                        CHECK (type IN ('TRANSFER', 'PAYMENT', 'BOX_RETENTION',
+                                                        'BOX_RELEASE', 'BOX_WITHDRAWAL')),
+    account_out_id                  UUID NOT NULL REFERENCES account(id),
+    account_in_id                   UUID REFERENCES account(id),
+    value                           NUMERIC(15,2) NOT NULL CHECK (value > 0),
+    idempotency_key                 VARCHAR(255) NOT NULL,
+    request_hash                    CHAR(64) NOT NULL,
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(account_out_id, idempotency_key)
+);
+
+CREATE TABLE ledger_entry(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id                  UUID NOT NULL REFERENCES transaction(id),
+    account_id                      UUID NOT NULL REFERENCES account(id),
+    direction                       VARCHAR(10) NOT NULL CHECK (direction IN ('DEBITO', 'CREDITO')),
+    value                           NUMERIC(15,2) NOT NULL CHECK (value > 0),
+    balance_after                   NUMERIC(15,2) NOT NULL,
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW())
+);
+
+-- O fechamento da caixinha soma os creditos de UMA conta num dia: e a
+-- consulta que este indice atende.
+CREATE INDEX ledger_entry_account_created_at ON ledger_entry(account_id, created_at);
+
+
+-- --------------------------------------------------------------------
+-- Caixinha de Equilibrio
+-- --------------------------------------------------------------------
+
+CREATE TABLE smoothing_box(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    box_key                         UUID NOT NULL DEFAULT gen_random_uuid(),
+    account_id                      UUID NOT NULL REFERENCES account(id),
+    balance                         NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    retention_pct                   SMALLINT NOT NULL CHECK (retention_pct BETWEEN 20 AND 80),
+    status                          VARCHAR(10) NOT NULL DEFAULT 'ACTIVE'
+                                        CHECK (status IN ('ACTIVE', 'PAUSED')),
+    activated_on                    DATE NOT NULL,
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(box_key),
+    UNIQUE(account_id)
+);
+
+CREATE TABLE box_entry(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    box_id                          UUID NOT NULL REFERENCES smoothing_box(id),
+    transaction_id                  UUID NOT NULL REFERENCES transaction(id),
+    direction                       VARCHAR(10) NOT NULL CHECK (direction IN ('DEBITO', 'CREDITO')),
+    origin                          VARCHAR(15) NOT NULL
+                                        CHECK (origin IN ('RETENTION', 'RELEASE', 'WITHDRAWAL')),
+    value                           NUMERIC(15,2) NOT NULL CHECK (value > 0),
+    balance_after                   NUMERIC(15,2) NOT NULL,
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(transaction_id)
+);
+
+CREATE TABLE daily_closing(
+    id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    closing_key                     UUID NOT NULL DEFAULT gen_random_uuid(),
+    box_id                          UUID NOT NULL REFERENCES smoothing_box(id),
+    reference_date                  DATE NOT NULL,
+    income                          NUMERIC(15,2) NOT NULL,
+    baseline                        NUMERIC(15,2) NOT NULL,
+    window_days                     SMALLINT NOT NULL,
+    lower_bound                     NUMERIC(15,2) NOT NULL,
+    upper_bound                     NUMERIC(15,2) NOT NULL,
+    band                            VARCHAR(10) NOT NULL
+                                        CHECK (band IN ('WARMUP', 'ABOVE', 'NEUTRAL', 'BELOW', 'PAUSED')),
+    amount_calculated               NUMERIC(15,2) NOT NULL,
+    amount_moved                    NUMERIC(15,2) NOT NULL CHECK (amount_moved >= 0),
+    transaction_id                  UUID REFERENCES transaction(id),
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(closing_key),
+    -- Um fechamento por caixinha por dia: a ultima linha de defesa da
+    -- idempotencia do fechamento (o RFC explica a primeira, que e a trava).
+    UNIQUE(box_id, reference_date)
+);

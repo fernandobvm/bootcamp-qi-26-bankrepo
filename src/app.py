@@ -9,7 +9,7 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource, SampleEntityResource
+from resources import HealthCheckResource, SampleEntityResource, SmoothingBoxResource
 from utils.logger import setup_logging
 
 
@@ -156,6 +156,40 @@ def create_app() -> FastAPI:
         "/sample_entities",
         sample_entity_resource.on_get_list,
         methods=["GET"],
+    )
+
+    # Caixinha de Equilíbrio — as rotas da tabela do RFC, na mesma ordem.
+    smoothing_box_resource = SmoothingBoxResource()
+
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box",
+        smoothing_box_resource.on_post,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box",
+        smoothing_box_resource.on_get,
+        methods=["GET"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box",
+        smoothing_box_resource.on_patch,
+        methods=["PATCH"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box/closings",
+        smoothing_box_resource.on_post_closing,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box/closings",
+        smoothing_box_resource.on_get_closings,
+        methods=["GET"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/smoothing-box/withdrawals",
+        smoothing_box_resource.on_post_withdrawal,
+        methods=["POST"],
     )
 
     register_error_handlers(application)

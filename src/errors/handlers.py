@@ -29,6 +29,12 @@ def qi_exception_to_response(exception: QIException) -> JSONResponse:
         "translation": exception.translation,
         "code": exception.code,
     }
+
+    # Alguns erros carregam um dado que ajuda quem chamou a se corrigir
+    # sozinho — o próximo dia a fechar, o saldo que havia. Ele vai junto,
+    # ao lado dos quatro campos de sempre.
+    body.update(getattr(exception, "extra", None) or {})
+
     return JSONResponse(status_code=exception.http_status, content=body)
 
 

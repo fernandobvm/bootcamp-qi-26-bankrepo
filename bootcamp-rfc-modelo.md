@@ -78,11 +78,11 @@ Alternativas descartadas:
 | `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001`; `404 EB002001`; `409 EB002008` pedido para o status em que ela já está |
 | `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001`; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002004` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002005` `reference_date` é hoje, futuro ou anterior a `activated_on` |
 | `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato ou `start_date` > `end_date`; `404 EB002001` |
-| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos (reenvio com a mesma chave e o mesmo corpo devolve o `201` original); `400 EB000001` valor ≤ 0; `404 EB002001`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente |
+| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (texto, > 0, até duas casas: `"50.00"`), `idempotency_key` | `201` com `transaction_id` e saldos (reenvio com a mesma chave e o mesmo corpo devolve o `201` original); `400 EB000001` valor ≤ 0, fora do formato ou com mais de duas casas; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente, com o saldo atual no corpo |
 
 **Idempotência**: as operações financeiras iniciadas pelo cliente (transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente resulta em `409`. O fechamento do dia não recebe chave do cliente: a idempotência vem de `UNIQUE(box_id, reference_date)` e da chave determinística `closing:{box_id}:{reference_date}` gravada na `transaction`.
 
-Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403`. Valores monetários em `numeric(15,2)`, nunca `float`. Datas no fuso `America/Sao_Paulo`.
+Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403`. Valores monetários em `numeric(15,2)`, nunca `float`; nas rotas da caixinha eles entram e saem como texto com duas casas (`"50.00"`), para não passarem por `float` em quem consome a API. Datas no fuso `America/Sao_Paulo`.
 
 
 ### Banco de Dados (Somente diagrama)
@@ -415,11 +415,11 @@ sequenceDiagram
     API->>DB: INSERT daily_closing
     API->>DB: COMMIT
     Note over DB: travas liberadas
-    API-->>Ag: 201 {closing_key, band, baseline, amount_moved, box_balance}
+    API-->>Ag: 201 {closing_key, band, income, baseline, lower_bound, upper_bound, amount_calculated, amount_moved}
 ```
 
-1. Valida o corpo; `reference_date` precisa ser um dia já encerrado e não anterior a `activated_on`,
-   senão `422 EB002005` antes de qualquer consulta.
+1. Valida o corpo; `reference_date` precisa ser um dia já encerrado (`422 EB002005` antes de qualquer
+   trava) e, depois de ler a caixinha, não anterior a `activated_on` (o mesmo `422`).
 2. Trava a conta e depois a caixinha, **sempre nessa ordem** — a mesma do resgate. A transferência do
    time trava só a conta, então espera o fechamento terminar (milissegundos) e nunca forma ciclo.
 3. Procura o fechamento de D. Não há. Procura o de D−1 (ou D é `activated_on`). Há.

@@ -1,1 +1,2 @@
 from dtos.sample_entity_dto import SampleEntityDTO
+from dtos.smoothing_box_dto import SmoothingBoxDTO

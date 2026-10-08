@@ -1,0 +1,16 @@
+{
+  "title": "PatchSmoothingBox",
+  "type": "object",
+  "properties": {
+    "retention_pct": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 80
+    },
+    "status": {
+      "enum": ["ACTIVE", "PAUSED"]
+    }
+  },
+  "minProperties": 1,
+  "additionalProperties": false
+}
