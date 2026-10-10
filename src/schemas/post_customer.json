@@ -1,0 +1,32 @@
+{
+  "title": "PostCustomer",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "nationality": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "document_number": {
+      "description": "CPF com a mascara: 000.000.000-00. Os digitos verificadores sao conferidos depois, no controller (422 EB001003).",
+      "type": "string",
+      "pattern": "^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$"
+    },
+    "email": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    },
+    "birth_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": ["name", "nationality", "document_number", "email", "birth_date"],
+  "additionalProperties": false
+}

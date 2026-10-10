@@ -9,7 +9,14 @@ from middlewares import (
     register_request_logger_middleware,
     register_session_manager_middleware,
 )
-from resources import HealthCheckResource, SampleEntityResource, SmoothingBoxResource
+from resources import (
+    AccountResource,
+    CustomerResource,
+    HealthCheckResource,
+    SampleEntityResource,
+    SmoothingBoxResource,
+    TransactionResource,
+)
 from utils.logger import setup_logging
 
 
@@ -155,6 +162,53 @@ def create_app() -> FastAPI:
     application.add_api_route(
         "/sample_entities",
         sample_entity_resource.on_get_list,
+        methods=["GET"],
+    )
+
+    # O banco — cliente, conta e as operações que movem saldo. Mesma
+    # ordem da tabela de rotas do RFC.
+    customer_resource = CustomerResource()
+    account_resource = AccountResource()
+    transaction_resource = TransactionResource()
+
+    application.add_api_route(
+        "/customers",
+        customer_resource.on_post,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/customers/{customer_id}",
+        customer_resource.on_get,
+        methods=["GET"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}",
+        account_resource.on_get,
+        methods=["GET"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}",
+        account_resource.on_patch,
+        methods=["PATCH"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/deposits",
+        transaction_resource.on_post_deposit,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/transfers",
+        transaction_resource.on_post_transfer,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/payments",
+        transaction_resource.on_post_payment,
+        methods=["POST"],
+    )
+    application.add_api_route(
+        "/accounts/{account_id}/transactions",
+        account_resource.on_get_transactions,
         methods=["GET"],
     )
 

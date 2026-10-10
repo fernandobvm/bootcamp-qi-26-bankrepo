@@ -1,6 +1,6 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import DateTime, func, literal
@@ -34,6 +34,7 @@ class TransactionRepository:
         idempotency_key: str,
         request_hash: str,
         account_in_id: Optional[UUID] = None,
+        related_transaction_id: Optional[UUID] = None,
     ) -> Transaction:
         transaction = Transaction()
         transaction.type = transaction_type
@@ -42,6 +43,7 @@ class TransactionRepository:
         transaction.value = value
         transaction.idempotency_key = idempotency_key
         transaction.request_hash = request_hash
+        transaction.related_transaction_id = related_transaction_id
 
         self.session.add(transaction)
 
@@ -69,6 +71,68 @@ class TransactionRepository:
             self.session.query(LedgerEntry)
             .filter(LedgerEntry.transaction_id == transaction_id, LedgerEntry.account_id == account_id)
             .first()
+        )
+
+    def get_related(self, transaction_id: UUID) -> Optional[Transaction]:
+        """A transação que nasceu de outra — hoje, a tarifa de uma transferência."""
+        return self.session.query(Transaction).filter(Transaction.related_transaction_id == transaction_id).first()
+
+    def list_statement(
+        self,
+        account_id: UUID,
+        limit: int,
+        offset: int,
+        start_date: Optional[date],
+        end_date: Optional[date],
+    ) -> List[Tuple[LedgerEntry, Transaction]]:
+        """Os lançamentos de uma conta, do mais novo para o mais antigo.
+
+        O extrato lê `ledger_entry`, e não `transaction`, porque é o
+        lançamento que diz o que aconteceu NESTA conta: a mesma
+        transferência é um DEBITO no extrato de quem mandou e um CREDITO
+        no de quem recebeu, cada um com o seu `balance_after`.
+
+        As datas são dias inteiros no fuso do banco: `end_date` inclui o
+        dia todo, até a meia-noite seguinte em São Paulo. O desempate por
+        `id` deixa a ordem total, e uma página nunca repete nem pula uma
+        linha da anterior.
+        """
+        query = (
+            self.session.query(LedgerEntry, Transaction)
+            .join(Transaction, Transaction.id == LedgerEntry.transaction_id)
+            .filter(LedgerEntry.account_id == account_id)
+        )
+
+        if start_date is not None:
+            period_start = datetime.combine(start_date, time.min)
+            query = query.filter(LedgerEntry.created_at >= func.timezone(BANK_TIMEZONE, literal(period_start, DateTime())))
+
+        if end_date is not None:
+            period_end = datetime.combine(end_date + timedelta(days=1), time.min)
+            query = query.filter(LedgerEntry.created_at < func.timezone(BANK_TIMEZONE, literal(period_end, DateTime())))
+
+        query = query.order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+
+        # Um a mais que o limite, só pra saber se existe próxima página.
+        return query.limit(limit + 1).offset(offset).all()
+
+    def count_transfers_since(self, account_id: UUID, first_day: date) -> int:
+        """Quantas transferências a conta FEZ (como origem) desde `first_day`, 00:00 de São Paulo.
+
+        É o que decide se a próxima transferência ainda está na franquia
+        do mês. Só conta o que foi gravado — uma transferência recusada
+        por saldo não existe aqui e não gasta franquia.
+        """
+        period_start = datetime.combine(first_day, time.min)
+
+        return (
+            self.session.query(func.count(Transaction.id))
+            .filter(
+                Transaction.account_out_id == account_id,
+                Transaction.type == Transaction.TRANSFER,
+                Transaction.created_at >= func.timezone(BANK_TIMEZONE, literal(period_start, DateTime())),
+            )
+            .scalar()
         )
 
     def sum_income_of_day(self, account_id: UUID, day: date, excluded_types: list) -> Decimal:

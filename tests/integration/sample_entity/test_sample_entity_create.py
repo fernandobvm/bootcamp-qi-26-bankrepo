@@ -23,7 +23,7 @@ class TestSampleEntityCreate:
         payload = {}
         status, response = RequestGenerator.POST_sample_entity(payload)
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_schema_refuses_unknown_field(self):
         """Campo que o schema nao pediu e erro, nao um campo ignorado.
@@ -38,7 +38,7 @@ class TestSampleEntityCreate:
 
         status, response = RequestGenerator.POST_sample_entity(payload)
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_schema_refuses_malformed_person_fields(self):
         """Cada campo de pessoa tem um formato, e o schema cobra os tres.
@@ -67,7 +67,7 @@ class TestSampleEntityCreate:
             status, response = RequestGenerator.POST_sample_entity(payload)
 
             assert status == 400, f"o campo '{campo}' aceitou o valor '{valor_torto}'"
-            assert response["code"] == "QIT000001"
+            assert response["code"] == "EB000001"
 
     def test_creates_entity_in_pending(self):
         document_number = RandomGenerator.generate_cpf()

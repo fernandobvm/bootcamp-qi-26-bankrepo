@@ -5,10 +5,11 @@ from models.base import Base
 
 
 class Customer(Base):
-    """Versão mínima do cliente, só o que a caixinha precisa para existir.
+    """O cliente, como no diagrama do RFC. Nasce junto com a conta.
 
-    Segue o diagrama do RFC. As rotas de cadastro são da solução
-    principal, e quem as escrever completa esta classe.
+    O CPF fica gravado com a máscara (`000.000.000-00`, por isso o
+    CHAR(14)): é o mesmo texto que chega no POST e o que o `UNIQUE`
+    compara.
     """
 
     __tablename__ = "customer"

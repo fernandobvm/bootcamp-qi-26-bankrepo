@@ -33,7 +33,7 @@ class TestSmoothingBoxCreate:
         for retention_pct in [19, 81, 0, 100]:
             status, response = RequestGenerator.POST_smoothing_box(account_id, {"retention_pct": retention_pct})
             assert status == 400, f"retention_pct={retention_pct} deveria ser recusado"
-            assert response["code"] == "QIT000001"
+            assert response["code"] == "EB000001"
 
     def test_refuses_unknown_field(self):
         account_id = BankSeed.create_account()
@@ -41,7 +41,7 @@ class TestSmoothingBoxCreate:
         status, response = RequestGenerator.POST_smoothing_box(account_id, {"retencao": 50})
 
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_second_activation_is_refused(self):
         """Repetir não cria outra: UNIQUE(account_id) e a trava na conta."""
@@ -57,7 +57,7 @@ class TestSmoothingBoxCreate:
         for account_id in [str(uuid4()), "nao-e-um-uuid"]:
             status, response = RequestGenerator.POST_smoothing_box(account_id)
             assert status == 404
-            assert response["code"] == "EB001030"
+            assert response["code"] == "EB001002"
 
     def test_account_must_be_active(self):
         account_id = BankSeed.create_account(status="SUSPENSA")
@@ -65,7 +65,7 @@ class TestSmoothingBoxCreate:
         status, response = RequestGenerator.POST_smoothing_box(account_id)
 
         assert status == 409
-        assert response["code"] == "EB002003"
+        assert response["code"] == "EB001006"
 
     def test_requires_internal_token(self):
         account_id = BankSeed.create_account()
@@ -115,7 +115,7 @@ class TestSmoothingBoxGetAndUpdate:
         status, response = RequestGenerator.PATCH_smoothing_box(account_id, {"status": "ACTIVE"})
 
         assert status == 409
-        assert response["code"] == "EB002008"
+        assert response["code"] == "EB002006"
 
     def test_patch_refuses_empty_body_and_bad_values(self):
         account_id = BankSeed.create_account()
@@ -124,4 +124,4 @@ class TestSmoothingBoxGetAndUpdate:
         for payload in [{}, {"status": "CLOSED"}, {"retention_pct": 90}]:
             status, response = RequestGenerator.PATCH_smoothing_box(account_id, payload)
             assert status == 400, f"{payload} deveria ser recusado"
-            assert response["code"] == "QIT000001"
+            assert response["code"] == "EB000001"

@@ -1,0 +1,11 @@
+{
+  "title": "PatchAccount",
+  "type": "object",
+  "properties": {
+    "status": {
+      "enum": ["ATIVA", "SUSPENSA", "ENCERRADA"]
+    }
+  },
+  "required": ["status"],
+  "additionalProperties": false
+}

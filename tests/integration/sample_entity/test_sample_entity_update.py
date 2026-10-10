@@ -65,7 +65,7 @@ class TestSampleEntityUpdate:
 
         status, response = RequestGenerator.PUT_sample_entity(_key, payload)
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_webhook(self):
 

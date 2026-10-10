@@ -88,13 +88,13 @@ def register_error_handlers(application: FastAPI) -> None:
         #
         # Quem julga a query string aqui e o JSON Schema, antes do
         # FastAPI (veja utils/schema_handler.py). Um ?page=-3 morre la,
-        # com 400 QIT000001 — nunca chega a virar RequestValidationError.
+        # com 400 EB000001 — nunca chega a virar RequestValidationError.
         # E os parametros de endereco sao todos `str`, que nao tem como
         # falhar validacao.
         #
         # O ramo fica de pe para o dia em que alguma rota declarar um
         # parametro tipado (page: int) e passar a depender do FastAPI
-        # para isso. O QIT000010 que o cliente ve hoje vem de outro
+        # para isso. O EB000010 que o cliente ve hoje vem de outro
         # lugar: do controller, quando birthdate_from > birthdate_to.
         if origin in ("query", "path"):
             return qi_exception_to_response(InvalidParameter(description))

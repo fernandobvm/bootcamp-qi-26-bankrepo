@@ -102,14 +102,29 @@ class InvalidBirthdate(QIException):
 
 
 # ────────────────────────────────────────────────────────────────────
-# Núcleo do banco — o mínimo que a caixinha precisa
+# Núcleo do banco — EB001xxx, a tabela "Códigos de erro" do RFC
 # ────────────────────────────────────────────────────────────────────
-# O RFC ainda deixa o código de "conta inexistente" como EB00XXXX. Este
-# é provisório: quando o time fixar o dele, troca-se aqui e só aqui.
+
+
+class NotFoundCustomer(QIException):
+    code = "EB001001"
+
+    def __init__(self, customer_id) -> None:
+        title = "Customer not Found"
+        http_status = 404
+        description = f"Customer {customer_id} was not found."
+        translation = "O cliente informado não existe."
+        super().__init__(title, self.code, http_status, description, translation)
 
 
 class NotFoundAccount(QIException):
-    code = "EB001030"
+    """Conta inexistente — ou, numa transferência, a conta de ORIGEM.
+
+    A de destino tem código próprio (EB001005): quem chamou precisa saber
+    qual das duas pontas está errada sem ler a descrição.
+    """
+
+    code = "EB001002"
 
     def __init__(self, account_id) -> None:
         title = "Account not Found"
@@ -117,6 +132,130 @@ class NotFoundAccount(QIException):
         description = f"Account {account_id} was not found."
         translation = "A conta informada não existe."
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class InvalidCustomerDocument(QIException):
+    """O CPF tem a máscara certa e os dígitos verificadores não batem.
+
+    O mesmo 422 do InvalidDocumentNumber da sample entity, e pelo mesmo
+    motivo (src/utils/document_number.py): a API leu o pedido, e o valor
+    é que não pode existir. Código separado porque este é do banco.
+    """
+
+    code = "EB001003"
+
+    def __init__(self, document_number) -> None:
+        title = "Invalid Document Number"
+        http_status = 422
+        description = f"The document number {document_number} is not a valid CPF."
+        translation = "O CPF informado não é válido."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class DuplicatedCustomer(QIException):
+    code = "EB001004"
+
+    def __init__(self, document_number) -> None:
+        title = "Customer already registered"
+        http_status = 409
+        description = f"There is already a customer with the document number {document_number}."
+        translation = "Já existe um cliente com este CPF."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class NotFoundDestinationAccount(QIException):
+    code = "EB001005"
+
+    def __init__(self, account_id) -> None:
+        title = "Destination account not Found"
+        http_status = 404
+        description = f"Destination account {account_id} was not found."
+        translation = "A conta de destino não existe."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountNotActive(QIException):
+    code = "EB001006"
+
+    def __init__(self, account_id, account_status) -> None:
+        title = "Account is not active"
+        http_status = 409
+        description = f"Account {account_id} is {account_status}, and only ATIVA accounts can do this."
+        translation = "A conta não está ATIVA."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class IdempotencyKeyReused(QIException):
+    code = "EB001007"
+
+    def __init__(self, idempotency_key) -> None:
+        title = "Idempotency key reused"
+        http_status = 409
+        description = f"The idempotency_key {idempotency_key} was already used with a different request."
+        translation = "Esta chave de idempotência já foi usada com outro pedido."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InsufficientBalance(QIException):
+    """O saldo não cobre o pedido. Na transferência, o pedido é valor + tarifa."""
+
+    code = "EB001008"
+
+    def __init__(self, required, balance) -> None:
+        title = "Insufficient balance"
+        http_status = 422
+        description = f"The operation needs {required:.2f}, but the account holds {balance:.2f}."
+        translation = "O saldo da conta não cobre a operação."
+        super().__init__(title, self.code, http_status, description, translation)
+        self.extra = {"balance": f"{balance:.2f}"}
+
+
+class SameAccountTransfer(QIException):
+    code = "EB001009"
+
+    def __init__(self, account_id) -> None:
+        title = "Same account transfer"
+        http_status = 422
+        description = f"Account {account_id} cannot transfer to itself."
+        translation = "A conta de origem e a de destino são a mesma."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountStatusTransitionNotAllowed(QIException):
+    """O ciclo de vida da conta só anda por estes caminhos:
+
+        ATIVA ⇄ SUSPENSA
+        ATIVA ou SUSPENSA → ENCERRADA (e dali não sai mais)
+
+    Pedir o status em que a conta já está também cai aqui: não há
+    transição nenhuma a fazer.
+    """
+
+    code = "EB001010"
+
+    def __init__(self, old_status, new_status) -> None:
+        title = "Account status transition not allowed"
+        http_status = 409
+        description = f"An account cannot go from {old_status} to {new_status}."
+        translation = "A conta não pode mudar para este status."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountHasBalance(QIException):
+    """Encerrar uma conta com dinheiro dentro deixaria o dinheiro preso nela."""
+
+    code = "EB001011"
+
+    def __init__(self, balance, box_balance) -> None:
+        title = "Account still has balance"
+        http_status = 422
+        description = (
+            f"The account holds {balance:.2f} and its smoothing box holds {box_balance:.2f}; "
+            "both must be zero to close it."
+        )
+        translation = "A conta só pode ser encerrada com saldo zero, inclusive na caixinha."
+        super().__init__(title, self.code, http_status, description, translation)
+        self.extra = {"balance": f"{balance:.2f}", "box_balance": f"{box_balance:.2f}"}
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -146,17 +285,6 @@ class DuplicatedSmoothingBox(QIException):
         super().__init__(title, self.code, http_status, description, translation)
 
 
-class AccountNotActive(QIException):
-    code = "EB002003"
-
-    def __init__(self, account_id, account_status) -> None:
-        title = "Account is not active"
-        http_status = 409
-        description = f"Account {account_id} is {account_status}, and only ATIVA accounts use the smoothing box."
-        translation = "A conta não está ATIVA."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
 class PreviousDayNotClosed(QIException):
     """Pediram o dia D e o dia anterior ainda está aberto.
 
@@ -165,7 +293,7 @@ class PreviousDayNotClosed(QIException):
     chamou fecha a partir dali.
     """
 
-    code = "EB002004"
+    code = "EB002003"
 
     def __init__(self, reference_date, next_reference_date) -> None:
         title = "Previous day not closed"
@@ -180,7 +308,7 @@ class PreviousDayNotClosed(QIException):
 
 
 class InvalidReferenceDate(QIException):
-    code = "EB002005"
+    code = "EB002004"
 
     def __init__(self, reference_date, reason) -> None:
         title = "Invalid reference date"
@@ -191,7 +319,7 @@ class InvalidReferenceDate(QIException):
 
 
 class InsufficientBoxBalance(QIException):
-    code = "EB002006"
+    code = "EB002005"
 
     def __init__(self, requested, box_balance) -> None:
         title = "Insufficient smoothing box balance"
@@ -202,19 +330,8 @@ class InsufficientBoxBalance(QIException):
         self.extra = {"box_balance": f"{box_balance:.2f}"}
 
 
-class IdempotencyKeyReused(QIException):
-    code = "EB002007"
-
-    def __init__(self, idempotency_key) -> None:
-        title = "Idempotency key reused"
-        http_status = 409
-        description = f"The idempotency_key {idempotency_key} was already used with a different request."
-        translation = "Esta chave de idempotência já foi usada com outro pedido."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
 class SmoothingBoxSameStatus(QIException):
-    code = "EB002008"
+    code = "EB002006"
 
     def __init__(self, box_status) -> None:
         title = "Smoothing box already in this status"

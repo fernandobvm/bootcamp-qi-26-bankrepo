@@ -6,7 +6,7 @@ from models.customer import Customer
 
 
 class Account(Base):
-    """Versão mínima da conta: saldo e ciclo de vida, como no RFC.
+    """A conta: saldo e ciclo de vida, como no RFC.
 
     O saldo é `Numeric(15, 2)`, que chega no Python como `Decimal` —
     nunca `float`. A caixinha soma, multiplica e compara esse valor, e

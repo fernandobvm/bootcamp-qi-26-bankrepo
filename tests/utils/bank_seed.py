@@ -4,28 +4,26 @@ from uuid import uuid4
 
 from sqlalchemy import create_engine, text
 
+from tests.utils.bank_api import BankApi
 from tests.utils.db_utils import DbUtils
-from tests.utils.random_generator import RandomGenerator
+from tests.utils.request_generator import RequestGenerator
 
 
 class BankSeed:
-    """Monta, direto no banco, o mundo que a caixinha precisa encontrar.
+    """Monta, direto no banco, o PASSADO que a caixinha precisa encontrar.
 
     ────────────────────────────────────────────────────────────────
     POR QUE ESTES TESTES NÃO ENTRAM SÓ "PELA PORTA DA FRENTE"
     ────────────────────────────────────────────────────────────────
-    O combinado do projeto é preparar o teste pelas rotas da API. Aqui
-    há dois motivos para abrir uma exceção, e só para a PREPARAÇÃO — a
-    ação e a conferência continuam sendo requisições HTTP de verdade:
+    O combinado do projeto é preparar o teste pelas rotas da API, e o
+    que dá para fazer assim já é feito assim: cliente, conta, saldo e
+    status nascem pelo `BankApi` (POST /customers, depósito, PATCH).
 
-    1. As rotas de cliente, conta e transferência são da solução
-       principal e ainda não existem nesta branch.
-    2. A caixinha trabalha com o PASSADO: renda de 15 dias atrás, uma
-       caixinha ativada há duas semanas. Nenhuma rota cria um crédito
-       com data de ontem — e não deveria criar.
-
-    Quando as rotas do time chegarem, as contas passam a nascer pelo
-    POST /customers; o histórico de renda continua precisando daqui.
+    O que sobra aqui é o que nenhuma rota cria — e não deveria criar: a
+    caixinha trabalha com o PASSADO. Renda de 15 dias atrás, uma
+    caixinha ativada há duas semanas, um saldo de caixinha que só um mês
+    de fechamentos produziria. Esses INSERTs são a exceção, e só na
+    PREPARAÇÃO: a ação e a conferência continuam sendo requisições HTTP.
     """
 
     _platform_account_id = None
@@ -46,25 +44,8 @@ class BankSeed:
 
     @staticmethod
     def create_account(balance: Decimal = Decimal("0.00"), status: str = "ATIVA") -> str:
-        engine = BankSeed._engine()
-        try:
-            with engine.begin() as connection:
-                customer_id = connection.execute(
-                    text(
-                        "INSERT INTO customer (document_number, name, nationality, email, birth_date) "
-                        "VALUES (:cpf, 'Entregador Teste', 'brasileira', :email, '1995-03-10') RETURNING id"
-                    ),
-                    {"cpf": RandomGenerator.generate_cpf(), "email": f"entregador.{uuid4()}@exemplo.com.br"},
-                ).scalar_one()
-
-                account_id = connection.execute(
-                    text("INSERT INTO account (customer_id, balance, status) VALUES (:customer_id, :balance, :status) RETURNING id"),
-                    {"customer_id": customer_id, "balance": balance, "status": status},
-                ).scalar_one()
-        finally:
-            engine.dispose()
-
-        return str(account_id)
+        """A conta nasce pela API; o nome continua aqui para os testes da caixinha."""
+        return BankApi.create_account(balance=balance, status=status)
 
     @staticmethod
     def set_account(account_id: str, balance: Decimal = None, status: str = None) -> None:
@@ -183,32 +164,12 @@ class BankSeed:
         return account_id, days
 
     @staticmethod
-    def count_transactions(account_id: str, transaction_type: str) -> int:
-        engine = BankSeed._engine()
-        try:
-            with engine.connect() as connection:
-                return connection.execute(
-                    text("SELECT COUNT(*) FROM transaction WHERE account_out_id = :id AND type = :type"),
-                    {"id": account_id, "type": transaction_type},
-                ).scalar_one()
-        finally:
-            engine.dispose()
-
-    @staticmethod
     def _platform_account() -> str:
         # Uma conta "plataforma" por processo de teste. Se o banco foi
         # recriado no meio (DbUtils.rollback), ela some — então confere.
         if BankSeed._platform_account_id is not None:
-            engine = BankSeed._engine()
-            try:
-                with engine.connect() as connection:
-                    exists = connection.execute(
-                        text("SELECT 1 FROM account WHERE id = :id"), {"id": BankSeed._platform_account_id}
-                    ).first()
-            finally:
-                engine.dispose()
-
-            if exists:
+            status, _ = RequestGenerator.GET_account(BankSeed._platform_account_id)
+            if status == 200:
                 return BankSeed._platform_account_id
 
         BankSeed._platform_account_id = BankSeed.create_account()

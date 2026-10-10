@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
 
-from tests.utils import BankSeed, RequestGenerator
+from tests.utils import BankApi, BankSeed, RequestGenerator
 
 # Catorze dias de R$ 200: o aquecimento inteiro, com média redonda.
 WARMUP = ["200.00"] * 14
@@ -190,7 +190,7 @@ class TestClosingIdempotency:
 
         assert status == 200
         assert again == first
-        assert BankSeed.count_transactions(account_id, "BOX_RETENTION") == 1
+        assert BankApi.count_in_statement(account_id, "BOX_RETENTION") == 1
 
         status, box = RequestGenerator.GET_smoothing_box(account_id)
         assert box["balance"] == "90.00"
@@ -214,7 +214,7 @@ class TestClosingIdempotency:
         closing_keys = {response["closing_key"] for _, response in results}
         assert len(closing_keys) == 1
 
-        assert BankSeed.count_transactions(account_id, "BOX_RETENTION") == 1
+        assert BankApi.count_in_statement(account_id, "BOX_RETENTION") == 1
 
         status, box = RequestGenerator.GET_smoothing_box(account_id)
         assert box["balance"] == "90.00"
@@ -227,7 +227,7 @@ class TestClosingRefusals:
         status, response = RequestGenerator.POST_smoothing_box_closing(account_id, days[2].isoformat())
 
         assert status == 409
-        assert response["code"] == "EB002004"
+        assert response["code"] == "EB002003"
         assert response["next_reference_date"] == days[0].isoformat()
 
     def test_today_cannot_be_closed(self):
@@ -236,7 +236,7 @@ class TestClosingRefusals:
         status, response = RequestGenerator.POST_smoothing_box_closing(account_id, BankSeed.today().isoformat())
 
         assert status == 422
-        assert response["code"] == "EB002005"
+        assert response["code"] == "EB002004"
 
     def test_day_before_activation_cannot_be_closed(self):
         account_id, days = BankSeed.build_history(["200.00"] * 2)
@@ -245,7 +245,7 @@ class TestClosingRefusals:
         status, response = RequestGenerator.POST_smoothing_box_closing(account_id, day_before.isoformat())
 
         assert status == 422
-        assert response["code"] == "EB002005"
+        assert response["code"] == "EB002004"
 
     def test_impossible_date_is_bad_request(self):
         account_id, days = BankSeed.build_history(["200.00"])
@@ -253,16 +253,16 @@ class TestClosingRefusals:
         for reference_date in ["2026-02-30", "02/10/2026"]:
             status, response = RequestGenerator.POST_smoothing_box_closing(account_id, reference_date)
             assert status == 400, reference_date
-            assert response["code"] == "QIT000001"
+            assert response["code"] == "EB000001"
 
     def test_inactive_account_cannot_close(self):
         account_id, days = BankSeed.build_history(["200.00"])
-        BankSeed.set_account(account_id, status="SUSPENSA")
+        BankApi.set_status(account_id, "SUSPENSA")
 
         status, response = RequestGenerator.POST_smoothing_box_closing(account_id, days[0].isoformat())
 
         assert status == 409
-        assert response["code"] == "EB002003"
+        assert response["code"] == "EB001006"
 
     def test_account_without_box(self):
         account_id = BankSeed.create_account()

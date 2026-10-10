@@ -1,30 +1,25 @@
-import hashlib
-import json
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from controllers.base_controller import BaseController
+from controllers.account_base_controller import AccountBaseController
 from controllers.smoothing_box_rule import WINDOW_DAYS, calculate_closing
 from dtos import SmoothingBoxDTO
 from errors import (
-    AccountNotActive,
     DuplicatedSmoothingBox,
     IdempotencyKeyReused,
     InsufficientBoxBalance,
     InvalidParameter,
     InvalidReferenceDate,
-    InvalidSchema,
-    NotFoundAccount,
     NotFoundSmoothingBox,
     PreviousDayNotClosed,
     SmoothingBoxSameStatus,
 )
 from models import Account, BoxEntry, DailyClosing, LedgerEntry, SmoothingBox, Transaction
-from repositories import AccountRepository, SmoothingBoxRepository, TransactionRepository
+from repositories import SmoothingBoxRepository
 
 DEFAULT_RETENTION_PCT = 50
 
@@ -32,7 +27,7 @@ DEFAULT_RETENTION_PCT = 50
 NOT_INCOME_TYPES = [Transaction.BOX_RELEASE, Transaction.BOX_WITHDRAWAL]
 
 
-class SmoothingBoxController(BaseController):
+class SmoothingBoxController(AccountBaseController):
     """As regras da Caixinha de Equilíbrio: ativar, fechar o dia e resgatar.
 
     ────────────────────────────────────────────────────────────────
@@ -51,8 +46,6 @@ class SmoothingBoxController(BaseController):
 
     def __init__(self) -> None:
         super().__init__(__name__)
-        self.account_repository = AccountRepository(self.context)
-        self.transaction_repository = TransactionRepository(self.context)
         self.smoothing_box_repository = SmoothingBoxRepository(self.context)
 
     # ────────────────────────────────────────────────────────────────
@@ -346,21 +339,6 @@ class SmoothingBoxController(BaseController):
 
         return last_closing.reference_date + timedelta(days=1)
 
-    def _get_account(self, account_id: str, for_update: bool = False) -> Account:
-        # Um identificador que nem é UUID não pode ser de conta nenhuma:
-        # é 404, e não um 500 vindo do PostgreSQL reclamando do tipo.
-        try:
-            parsed_account_id = UUID(account_id)
-        except ValueError:
-            raise NotFoundAccount(account_id)
-
-        account = self.account_repository.get_by_id(parsed_account_id, for_update=for_update)
-
-        if account is None:
-            raise NotFoundAccount(account_id)
-
-        return account
-
     def _get_box(self, account: Account, for_update: bool = False) -> SmoothingBox:
         box = self.smoothing_box_repository.get_by_account(account.id, for_update=for_update)
 
@@ -368,38 +346,3 @@ class SmoothingBoxController(BaseController):
             raise NotFoundSmoothingBox(account.id)
 
         return box
-
-    def _check_account_active(self, account: Account) -> None:
-        if account.status != Account.ATIVA:
-            raise AccountNotActive(account.id, account.status)
-
-    def _parse_date(self, field_name: str, raw_date: str, error_class=InvalidSchema) -> date:
-        """Converte a data, ou recusa com 400.
-
-        O schema já cobrou o formato AAAA-MM-DD; quem sabe que fevereiro
-        não tem dia 30 é o calendário, e é aqui que "2026-02-30" para.
-        """
-        try:
-            return date.fromisoformat(raw_date)
-        except ValueError:
-            raise error_class(f"{field_name} ({raw_date}) is not a real date")
-
-    def _parse_money(self, field_name: str, raw_value: str) -> Decimal:
-        """Texto vira `Decimal` direto — o valor nunca passa por `float`.
-
-        O schema garante até duas casas decimais; aqui só falta recusar o
-        zero, que um `pattern` não sabe distinguir de "0.00".
-        """
-        try:
-            value = Decimal(raw_value)
-        except InvalidOperation:
-            raise InvalidSchema(f"{field_name} ({raw_value}) is not a valid amount")
-
-        if value <= 0:
-            raise InvalidSchema(f"{field_name} must be greater than zero")
-
-        return value.quantize(Decimal("0.01"))
-
-    def _hash_request(self, normalized_request: dict) -> str:
-        serialized = json.dumps(normalized_request, sort_keys=True)
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()

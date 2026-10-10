@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from uuid import uuid4
 
-from tests.utils import BankSeed, RequestGenerator
+from tests.utils import BankApi, BankSeed, RequestGenerator
 
 
 def account_with_box(box_balance: str, account_balance: str = "100.00") -> str:
@@ -46,7 +46,7 @@ class TestWithdrawal:
 
         assert first_status == second_status == 201
         assert second == first
-        assert BankSeed.count_transactions(account_id, "BOX_WITHDRAWAL") == 1
+        assert BankApi.count_in_statement(account_id, "BOX_WITHDRAWAL") == 1
 
     def test_same_amount_written_differently_is_the_same_request(self):
         account_id = account_with_box("150.00")
@@ -56,7 +56,7 @@ class TestWithdrawal:
         status, _ = RequestGenerator.POST_smoothing_box_withdrawal(account_id, {"value": "50.00", "idempotency_key": key})
 
         assert status == 201
-        assert BankSeed.count_transactions(account_id, "BOX_WITHDRAWAL") == 1
+        assert BankApi.count_in_statement(account_id, "BOX_WITHDRAWAL") == 1
 
     def test_same_key_other_body_is_conflict(self):
         account_id = account_with_box("150.00")
@@ -68,7 +68,7 @@ class TestWithdrawal:
         )
 
         assert status == 409
-        assert response["code"] == "EB002007"
+        assert response["code"] == "EB001007"
 
     def test_insufficient_box_balance(self):
         account_id = account_with_box("40.00")
@@ -78,7 +78,7 @@ class TestWithdrawal:
         )
 
         assert status == 422
-        assert response["code"] == "EB002006"
+        assert response["code"] == "EB002005"
         assert response["box_balance"] == "40.00"
 
     def test_concurrent_withdrawals_never_go_negative(self):
@@ -109,7 +109,7 @@ class TestWithdrawal:
                 account_id, {"value": value, "idempotency_key": str(uuid4())}
             )
             assert status == 400, f"value={value!r} deveria ser recusado"
-            assert response["code"] == "QIT000001"
+            assert response["code"] == "EB000001"
 
     def test_requires_idempotency_key(self):
         account_id = account_with_box("100.00")
@@ -120,11 +120,11 @@ class TestWithdrawal:
 
     def test_inactive_account_cannot_withdraw(self):
         account_id = account_with_box("100.00")
-        BankSeed.set_account(account_id, status="SUSPENSA")
+        BankApi.set_status(account_id, "SUSPENSA")
 
         status, response = RequestGenerator.POST_smoothing_box_withdrawal(
             account_id, {"value": "10.00", "idempotency_key": str(uuid4())}
         )
 
         assert status == 409
-        assert response["code"] == "EB002003"
+        assert response["code"] == "EB001006"

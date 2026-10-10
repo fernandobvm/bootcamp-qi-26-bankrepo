@@ -38,9 +38,8 @@ CREATE TABLE sample_entity_status_event(
 -- --------------------------------------------------------------------
 -- Nucleo do banco (customer, account, transaction, ledger_entry)
 -- --------------------------------------------------------------------
--- Versao MINIMA, escrita na branch da caixinha so para ela ter onde se
--- apoiar. Segue o diagrama do RFC; as rotas destas tabelas sao do time
--- e entram na branch da solucao principal.
+-- Segue o diagrama do RFC. As rotas que usam estas tabelas sao as de
+-- cliente, conta, deposito, transferencia, pagamento e extrato.
 
 CREATE TABLE customer(
     id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -67,15 +66,23 @@ CREATE TABLE account(
 CREATE TABLE transaction(
     id                              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type                            VARCHAR(30) NOT NULL
-                                        CHECK (type IN ('TRANSFER', 'PAYMENT', 'BOX_RETENTION',
-                                                        'BOX_RELEASE', 'BOX_WITHDRAWAL')),
+                                        CHECK (type IN ('DEPOSIT', 'TRANSFER', 'FEE', 'PAYMENT',
+                                                        'BOX_RETENTION', 'BOX_RELEASE', 'BOX_WITHDRAWAL')),
+    -- A conta dona da operacao: a de origem na TRANSFER e no PAYMENT, a
+    -- que recebe no DEPOSIT, a que paga na FEE, a dona da caixinha nas
+    -- BOX_*. E nela que a idempotency_key vale.
     account_out_id                  UUID NOT NULL REFERENCES account(id),
+    -- Preenchida so na TRANSFER: a conta de destino.
     account_in_id                   UUID REFERENCES account(id),
     value                           NUMERIC(15,2) NOT NULL CHECK (value > 0),
     idempotency_key                 VARCHAR(255) NOT NULL,
     request_hash                    CHAR(64) NOT NULL,
+    -- Na FEE, a transferencia que gerou a tarifa. O UNIQUE garante uma
+    -- tarifa por transferencia, no maximo.
+    related_transaction_id          UUID REFERENCES transaction(id),
     created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
-    UNIQUE(account_out_id, idempotency_key)
+    UNIQUE(account_out_id, idempotency_key),
+    UNIQUE(related_transaction_id)
 );
 
 CREATE TABLE ledger_entry(
@@ -85,11 +92,15 @@ CREATE TABLE ledger_entry(
     direction                       VARCHAR(10) NOT NULL CHECK (direction IN ('DEBITO', 'CREDITO')),
     value                           NUMERIC(15,2) NOT NULL CHECK (value > 0),
     balance_after                   NUMERIC(15,2) NOT NULL,
-    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(NOW())
+    -- clock_timestamp(), e nao NOW(): o NOW() e o inicio da transacao de
+    -- banco, igual para todos os lancamentos dela. A transferencia grava
+    -- o debito e a tarifa na mesma transacao, e o extrato precisa saber
+    -- qual veio primeiro.
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT(clock_timestamp())
 );
 
--- O fechamento da caixinha soma os creditos de UMA conta num dia: e a
--- consulta que este indice atende.
+-- Duas consultas leem os lancamentos de UMA conta por periodo: o extrato
+-- e a renda do dia da caixinha. As duas usam este indice.
 CREATE INDEX ledger_entry_account_created_at ON ledger_entry(account_id, created_at);
 
 

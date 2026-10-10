@@ -343,7 +343,9 @@ lições de segurança que cabem em cinco linhas.
 
 ### Todas as rotas
 
-Sete endereços — este é o mapa inteiro da API:
+Este é o mapa inteiro da API. As rotas do banco e da caixinha estão
+explicadas, com os códigos de erro de cada uma, na tabela de rotas do
+`bootcamp-rfc-modelo.md`:
 
 | Método e rota | O que faz | Responde |
 |---|---|---|
@@ -354,10 +356,44 @@ Sete endereços — este é o mapa inteiro da API:
 | `GET /sample_entities` | lista, de dez em dez, com filtros | `200` + a página |
 | `PUT /sample_entity/{key}` | muda o status (`success` ou `failed`) | `202` + o `sample_entity_key` |
 | `PUT /webhook/sample_entity/{key}/increment_counter` | soma 1 no contador | `204`, sem corpo |
+| `POST /customers` | cadastra o cliente e a conta dele | `201` + `customer_id` e `account_id` |
+| `GET /customers/{customer_id}` | busca um cliente | `200` + o cliente |
+| `GET /accounts/{account_id}` | saldo e status da conta | `200` + a conta |
+| `PATCH /accounts/{account_id}` | muda o status (`ATIVA`, `SUSPENSA`, `ENCERRADA`) | `200` + a conta |
+| `POST /accounts/{account_id}/deposits` | deposita (dinheiro vindo de fora) | `201` + a transação |
+| `POST /accounts/{account_id}/transfers` | transfere para outra conta (5 grátis por mês, depois 1% com mínimo de R$ 1,00) | `201` + a transação e a tarifa |
+| `POST /accounts/{account_id}/payments` | paga para fora do banco | `201` + a transação |
+| `GET /accounts/{account_id}/transactions` | extrato, de dez em dez | `200` + a página |
+| `POST/GET/PATCH /accounts/{account_id}/smoothing-box` | ativa, consulta e altera a caixinha | `201`/`200` |
+| `POST/GET /accounts/{account_id}/smoothing-box/closings` | fecha um dia e lista os fechamentos | `201`/`200` |
+| `POST /accounts/{account_id}/smoothing-box/withdrawals` | resgata da caixinha | `201` |
 
-As cinco de baixo exigem o `INTERNAL-TOKEN` (seção 6). As duas de cima
-são abertas — a primeira você já usou: foi ela que respondeu no
-navegador.
+Todas, menos as duas primeiras, exigem o `INTERNAL-TOKEN` (seção 6). As
+duas de cima são abertas — a primeira você já usou: foi ela que
+respondeu no navegador.
+
+Um exemplo do banco, do cadastro à transferência (troque os ids pelos
+que voltarem):
+
+```bash
+curl -X POST http://localhost:3000/customers \
+  -H "INTERNAL-TOKEN: default_token" -H "Content-Type: application/json" \
+  -d '{"name": "Ana", "nationality": "brasileira", "document_number": "529.982.247-25", "email": "ana@exemplo.com.br", "birth_date": "1995-03-10"}'
+
+curl -X POST http://localhost:3000/accounts/<account_id>/deposits \
+  -H "INTERNAL-TOKEN: default_token" -H "Content-Type: application/json" \
+  -d '{"value": "500.00", "idempotency_key": "deposito-1"}'
+
+curl -X POST http://localhost:3000/accounts/<account_id>/transfers \
+  -H "INTERNAL-TOKEN: default_token" -H "Content-Type: application/json" \
+  -d '{"account_id_in": "<outra_account_id>", "value": "200.00", "idempotency_key": "transferencia-1"}'
+
+curl "http://localhost:3000/accounts/<account_id>/transactions?limit=10&page=0" \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+Dinheiro vai e volta como **texto** com duas casas (`"200.00"`), nunca
+como número: assim o valor não passa por `float` em lugar nenhum.
 
 Os parâmetros da listagem, todos opcionais e combináveis:
 `?limit=` (padrão 10, teto 100) · `?page=` (padrão 0) · `?status=`
@@ -647,18 +683,20 @@ Todo erro da API responde no mesmo formato, com um código próprio:
   "title": "Bad Request",
   "description": "'hello' is a required property",
   "translation": "Payload Inválido",
-  "code": "QIT000001"
+  "code": "EB000001"
 }
 ```
 
 | Código      | Quando acontece                                  |
 |-------------|--------------------------------------------------|
-| `QIT000001` | o JSON enviado está fora do formato              |
-| `QIT000002` | faltou o `INTERNAL-TOKEN`, ou ele está errado    |
-| `QIT000010` | os parâmetros do endereço se contradizem         |
-| `QIT000404` | essa rota não existe                             |
-| `QIT000405` | a rota existe, mas não aceita esse método        |
-| `QIT000500` | erro inesperado (o time é avisado)               |
+| `EB000001`  | o JSON enviado está fora do formato              |
+| `EB000002`  | faltou o `INTERNAL-TOKEN`, ou ele está errado    |
+| `EB000010`  | os parâmetros do endereço se contradizem         |
+| `EB000404`  | essa rota não existe                             |
+| `EB000405`  | a rota existe, mas não aceita esse método        |
+| `EB000500`  | erro inesperado (o time é avisado)               |
+| `EB001…`    | regras do banco: cliente, conta, transações      |
+| `EB002…`    | regras da Caixinha de Equilíbrio                 |
 | `QIT001001` | a entidade procurada não existe                  |
 | `QIT001002` | a entidade já está num status final              |
 | `QIT001003` | o CPF tem o formato certo, mas não é um CPF      |
@@ -670,14 +708,18 @@ Todo erro da API responde no mesmo formato, com um código próprio:
 Um código estável vale mais que uma mensagem bonita: quem integra com a
 API programa em cima do código, não do texto.
 
-Os números não são sorteados. Eles vêm em duas faixas:
+Os números não são sorteados. Eles vêm em faixas:
 
-- **`QIT000…`** — os erros que **toda** API tem: JSON errado, sem token,
+- **`EB000…`** — os erros que **toda** API tem: JSON errado, sem token,
   rota inexistente. Estão em `src/errors/base_error.py` e você não
   precisa mexer neles.
-- **`QIT001…`** — os erros das **regras deste projeto**. Estão em
-  `src/errors/custom_errors.py`, e é aí que os seus entram: o próximo
-  livre é o `QIT001008`.
+- **`EB001…`** e **`EB002…`** — os erros das **regras do banco** e da
+  **caixinha**. Estão em `src/errors/custom_errors.py`, e a lista
+  completa, com o status HTTP de cada um, está na seção "Códigos de
+  erro" do `bootcamp-rfc-modelo.md`. O próximo livre do banco é o
+  `EB001012`.
+- **`QIT001…`** — os da `sample_entity`, a entidade de exemplo do
+  projeto base.
 
 Não repita um número. Se repetir, a API **não sobe** — tem uma checagem
 no start (`error_verification`, em `src/errors/base_error.py`) que

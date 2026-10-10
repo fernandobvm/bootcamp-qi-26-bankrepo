@@ -1,0 +1,24 @@
+{
+  "title": "PostTransfer",
+  "type": "object",
+  "properties": {
+    "account_id_in": {
+      "description": "A conta de destino, no banco. Um UUID que nao seja de conta nenhuma responde 404 EB001005.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "value": {
+      "description": "Valor em reais, como TEXTO com ate duas casas decimais: \"50.00\". A tarifa e cobrada a parte, e o saldo precisa cobrir valor + tarifa.",
+      "type": "string",
+      "pattern": "^\\d{1,13}(\\.\\d{1,2})?$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  },
+  "required": ["account_id_in", "value", "idempotency_key"],
+  "additionalProperties": false
+}

@@ -32,7 +32,7 @@ class QIException(Exception):
 
 
 class MethodNotAllowed(QIException):
-    code = "QIT000405"
+    code = "EB000405"
 
     def __init__(self) -> None:
         title = "Method not allowed"
@@ -43,7 +43,7 @@ class MethodNotAllowed(QIException):
 
 
 class InternalError(QIException):
-    code = "QIT000500"
+    code = "EB000500"
 
     def __init__(self) -> None:
         title = "Internal Error"
@@ -54,7 +54,7 @@ class InternalError(QIException):
 
 
 class NotFoundResource(QIException):
-    code = "QIT000404"
+    code = "EB000404"
 
     def __init__(self) -> None:
         title = "Resource not Found"
@@ -65,7 +65,7 @@ class NotFoundResource(QIException):
 
 
 class InvalidSchema(QIException):
-    code = "QIT000001"
+    code = "EB000001"
 
     def __init__(self, __description) -> None:
         title = "Bad Request"
@@ -76,7 +76,7 @@ class InvalidSchema(QIException):
 
 
 class ForbiddenNotInternal(QIException):
-    code = "QIT000002"
+    code = "EB000002"
 
     def __init__(self) -> None:
         title = "Forbidden"
@@ -87,7 +87,7 @@ class ForbiddenNotInternal(QIException):
 
 
 class InvalidParameter(QIException):
-    code = "QIT000010"
+    code = "EB000010"
 
     def __init__(self, description) -> None:
         title = "Invalid Parameter"

@@ -1,21 +1,7 @@
-from decimal import Decimal
 from typing import List, Optional
 
+from dtos.formatters import money
 from models import BoxEntry, DailyClosing, LedgerEntry, SmoothingBox, Transaction
-
-
-def money(value: Optional[Decimal]) -> Optional[str]:
-    """Dinheiro sai como texto com duas casas: "50.00", nunca 50.0.
-
-    Um número decimal no JSON vira `float` em quem lê (o JavaScript, por
-    exemplo, não tem outro tipo), e é aí que R$ 0,10 + R$ 0,20 deixa de
-    dar R$ 0,30. Mandando texto, o valor chega do jeito que o banco
-    guardou, e quem consome converte para o tipo exato da linguagem dele.
-    """
-    if value is None:
-        return None
-
-    return f"{value:.2f}"
 
 
 class SmoothingBoxDTO:

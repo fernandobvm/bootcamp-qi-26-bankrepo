@@ -72,11 +72,11 @@ class TestSampleEntities:
     def test_wrong_params(self):
         status, response = RequestGenerator.GET_sample_entities({"page": -3})
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
         status, response = RequestGenerator.GET_sample_entities({"limit": 500})
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_list_does_not_carry_the_status_trail(self):
         """A pagina traz o resumo; a historia so no GET por chave.
@@ -115,7 +115,7 @@ class TestSampleEntities:
         """
         status, response = RequestGenerator.GET_sample_entities({"stauts": "pending"})
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
     def test_filters_by_partial_name_ignoring_case(self):
         """Nome casa por PEDACO e ignora maiuscula/minuscula.
@@ -269,7 +269,7 @@ class TestSampleEntities:
             {"birthdate_from": "2000-01-01", "birthdate_to": "1990-01-01"}
         )
         assert status == 400
-        assert response["code"] == "QIT000010"
+        assert response["code"] == "EB000010"
 
     def test_filters_by_more_than_one_status(self):
         """O filtro de status aceita VARIOS valores, somados com OU.
@@ -322,10 +322,10 @@ class TestSampleEntities:
         """
         status, response = RequestGenerator.GET_sample_entities({"status": ["status_que_nao_existe"]})
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"
 
         status, response = RequestGenerator.GET_sample_entities(
             {"status": ["pending", "status_que_nao_existe"]}
         )
         assert status == 400
-        assert response["code"] == "QIT000001"
+        assert response["code"] == "EB000001"

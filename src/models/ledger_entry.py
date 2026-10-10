@@ -17,7 +17,7 @@ class LedgerEntry(Base):
     direction = Column(String(10), nullable=False)
     value = Column(Numeric(15, 2), nullable=False)
     balance_after = Column(Numeric(15, 2), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.clock_timestamp())
 
     DEBITO = "DEBITO"
     CREDITO = "CREDITO"
