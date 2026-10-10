@@ -80,9 +80,38 @@ Alternativas descartadas:
 | `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato ou `start_date` > `end_date`; `404 EB002001` |
 | `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (texto, > 0, até duas casas: `"50.00"`), `idempotency_key` | `201` com `transaction_id` e saldos (reenvio com a mesma chave e o mesmo corpo devolve o `201` original); `400 EB000001` valor ≤ 0, fora do formato ou com mais de duas casas; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente, com o saldo atual no corpo |
 
-**Idempotência**: as operações financeiras iniciadas pelo cliente (transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente resulta em `409`. O fechamento do dia não recebe chave do cliente: a idempotência vem de `UNIQUE(box_id, reference_date)` e da chave determinística `closing:{box_id}:{reference_date}` gravada na `transaction`.
+**Idempotência**: as operações financeiras iniciadas pelo cliente (transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente resulta em `409 EB001007`. O fechamento do dia não recebe chave do cliente: a idempotência vem de `UNIQUE(box_id, reference_date)` e da chave determinística `closing:{box_id}:{reference_date}` gravada na `transaction`.
 
-Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403`. Valores monetários em `numeric(15,2)`, nunca `float`; nas rotas da caixinha eles entram e saem como texto com duas casas (`"50.00"`), para não passarem por `float` em quem consome a API. Datas no fuso `America/Sao_Paulo`.
+Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403 EB000002`. Valores monetários em `numeric(15,2)`, nunca `float`. Datas no fuso `America/Sao_Paulo`.
+
+### Códigos de erro
+
+Todo erro responde no formato padrão do projeto (`title`, `description`, `translation`, `code`). Os códigos seguem o padrão `EB` + grupo de 3 dígitos + sequencial de 3 dígitos; cada código tem um único significado e é reutilizado em todas as rotas onde o mesmo erro acontece.
+
+| Código | HTTP | Quando |
+|---|---|---|
+| `EB000001` | `400` | corpo ou parâmetros fora do formato (schema) |
+| `EB000002` | `403` | token interno ausente ou errado |
+| `EB000010` | `400` | parâmetros que se contradizem (`start_date` posterior a `end_date`) |
+| `EB000404` | `404` | rota inexistente |
+| `EB000405` | `405` | a rota existe, mas não aceita o método |
+| `EB000500` | `500` | erro inesperado |
+| `EB001001` | `404` | cliente inexistente |
+| `EB001002` | `404` | conta inexistente (ou conta de origem inexistente) |
+| `EB001003` | `422` | CPF com dígitos verificadores que não batem |
+| `EB001004` | `409` | CPF já cadastrado |
+| `EB001005` | `404` | conta de destino inexistente |
+| `EB001006` | `409` | conta não está `ATIVA` |
+| `EB001007` | `409` | `idempotency_key` reutilizada com outro payload |
+| `EB001008` | `422` | saldo da conta insuficiente |
+| `EB002001` | `404` | conta sem caixinha |
+| `EB002002` | `409` | a conta já tem caixinha |
+| `EB002003` | `409` | o dia anterior não foi fechado (`next_reference_date` no corpo) |
+| `EB002004` | `422` | `reference_date` é hoje, futuro ou anterior a `activated_on` |
+| `EB002005` | `422` | saldo da caixinha insuficiente |
+| `EB002006` | `409` | `PATCH` pede o status em que a caixinha já está |
+
+Grupos: `EB000…` são os erros genéricos de toda API, `EB001…` os do banco (cliente, conta, transferência, pagamento, extrato) e `EB002…` os da caixinha.
 
 
 ### Banco de Dados (Somente diagrama)
@@ -191,13 +220,13 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     S->>API: POST /customers (name, document_number, email, birth_date, ...)
-    API->>API: valida schema e máscara do CPF, senão 400
-    API->>API: valida dígitos verificadores do CPF, senão 422
+    API->>API: valida schema e máscara do CPF, senão 400 EB000001
+    API->>API: valida dígitos verificadores do CPF, senão 422 EB001003
     API->>DB: BEGIN
     API->>DB: INSERT customer (document_number, ...)
     alt violação de UNIQUE(document_number)
         API->>DB: ROLLBACK
-        API-->>S: 409 CPF já cadastrado
+        API-->>S: 409 EB001004 CPF já cadastrado
     else CPF novo
         API->>DB: INSERT account (customer_id, status = ATIVA, balance = 0)
         API->>DB: COMMIT
@@ -219,7 +248,7 @@ sequenceDiagram
     R1->>DB: INSERT account e COMMIT
     DB-->>R2: unique_violation em document_number
     R2->>DB: ROLLBACK
-    Note over R2: responde 409 CPF já cadastrado
+    Note over R2: responde 409 EB001004 CPF já cadastrado
 ```
 
 **Consulta de cliente — caminho feliz e falha (404)**
@@ -234,7 +263,7 @@ sequenceDiagram
     S->>API: GET /customers/{customer_id}
     API->>DB: SELECT customer JOIN account WHERE customer.id = customer_id
     alt cliente inexistente
-        API-->>S: 404 cliente inexistente
+        API-->>S: 404 EB001001 cliente inexistente
     else encontrado
         API-->>S: 200 dados do cliente, document_number e account_id
     end
@@ -253,7 +282,7 @@ sequenceDiagram
     API->>DB: SELECT balance, status FROM account WHERE id = account_id
     Note over DB: leitura sem trava, vê o último saldo commitado
     alt conta inexistente
-        API-->>S: 404 conta inexistente
+        API-->>S: 404 EB001002 conta inexistente
     else encontrada
         API-->>S: 200 account_id, balance e status
     end
@@ -271,7 +300,7 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     S->>API: POST /accounts/{out}/transfers (account_id_in, value, idempotency_key)
-    API->>API: valida schema (value > 0), senão 400
+    API->>API: valida schema (value > 0), senão 400 EB000001
     API->>DB: BEGIN
     API->>DB: SELECT account WHERE id IN (out, in) ORDER BY id FOR UPDATE
     Note over DB: trava as duas linhas em ordem de id (evita deadlock)
@@ -282,18 +311,18 @@ sequenceDiagram
             API-->>S: 201 com a transação original
         else payload diferente
             API->>DB: ROLLBACK
-            API-->>S: 409 chave reutilizada com outro payload
+            API-->>S: 409 EB001007 chave reutilizada com outro payload
         end
     else chave nova
         alt origem ou destino inexistente
             API->>DB: ROLLBACK
-            API-->>S: 404
+            API-->>S: 404 EB001002 (origem) ou EB001005 (destino)
         else alguma conta não está ATIVA
             API->>DB: ROLLBACK
-            API-->>S: 409 conta inativa
+            API-->>S: 409 EB001006 conta inativa
         else saldo da origem < value
             API->>DB: ROLLBACK
-            API-->>S: 422 saldo insuficiente
+            API-->>S: 422 EB001008 saldo insuficiente
         else tudo ok
             API->>DB: INSERT transaction (idempotency_key, request_hash, value)
             API->>DB: INSERT ledger_entry DEBITO (out) e CREDITO (in)
@@ -323,7 +352,7 @@ sequenceDiagram
     Note over DB: trava liberada
     DB-->>R2: saldo 20 (lê o valor já atualizado)
     R2->>DB: ROLLBACK
-    Note over R2: responde 422 saldo insuficiente
+    Note over R2: responde 422 EB001008 saldo insuficiente
 ```
 
 **Extrato de transações — caminho feliz e falhas (400, 404, 409)**
@@ -336,12 +365,12 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     S->>API: GET /accounts/{account_id}/transactions (start_date, end_date opcionais)
-    API->>API: valida formato das datas e start_date <= end_date, senão 400
+    API->>API: valida formato das datas (senão 400 EB000001) e start_date <= end_date (senão 400 EB000010)
     API->>DB: SELECT status FROM account WHERE id = account_id
     alt conta inexistente
-        API-->>S: 404 conta inexistente
+        API-->>S: 404 EB001002 conta inexistente
     else conta não está ATIVA
-        API-->>S: 409 conta inativa
+        API-->>S: 409 EB001006 conta inativa
     else conta ATIVA
         API->>DB: SELECT ledger_entry JOIN transaction WHERE account_id = account_id AND created_at no período ORDER BY created_at
         API-->>S: 200 lista de lançamentos (tipo, valor, contraparte, data)
@@ -445,7 +474,7 @@ sequenceDiagram
 
 1. O agendador ficou fora do ar em D−1 e pede D. A API trava conta e caixinha, não encontra o fechamento
    de D−1 e encerra a sessão sem `COMMIT`.
-2. Responde `409 EB002004` com `next_reference_date` = o primeiro dia aberto. O agendador fecha os dias
+2. Responde `409 EB002003` com `next_reference_date` = o primeiro dia aberto. O agendador fecha os dias
    em ordem até chegar a D. Fechar fora de ordem deixaria a média de D sem o dia D−1.
 
 **Fechar o dia — falha: o cliente gastou o excedente antes do fechamento**
@@ -466,8 +495,8 @@ sequenceDiagram
 1. A caixinha tem R$ 100. O cliente pede R$ 100 enquanto o fechamento de um dia `BELOW` está liberando
    R$ 60. O fechamento pegou as travas primeiro; o resgate espera na trava da conta.
 2. O fechamento confirma: caixinha com R$ 40. O resgate recebe as travas, lê R$ 40 e responde
-   `422 EB002006` com o saldo atual. Nada é gravado. A mesma chave com o mesmo corpo repetida depois
-   volta a ser avaliada; com outro corpo, `409 EB002007`.
+   `422 EB002005` com o saldo atual. Nada é gravado. A mesma chave com o mesmo corpo repetida depois
+   volta a ser avaliada; com outro corpo, `409 EB001007`.
 
 
 > ## Principal desafio
@@ -484,4 +513,4 @@ sequenceDiagram
 >   determinística da `transaction` seguram o caso que escapar. A média lê a renda já gravada nos 28
 >   `daily_closing` anteriores, não o ledger, e cada fechamento guarda a média, o piso, o teto e os
 >   valores calculado e movido; a renda do dia exclui `BOX_RELEASE` e `BOX_WITHDRAWAL`. Os fechamentos
->   são sequenciais (`409` se faltar o dia anterior), então todo dia, inclusive a folga, entra na média.
+>   são sequenciais (`409 EB002003` se faltar o dia anterior), então todo dia, inclusive a folga, entra na média.

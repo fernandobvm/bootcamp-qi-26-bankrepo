@@ -66,14 +66,14 @@ Alternativas descartadas:
 
 | Método | Caminho | O que faz | Entrada (campos que importam) | Saídas (status e quando) |
 |---|---|---|---|---|
-| `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404` conta inexistente (código do RFC do time); `409 EB002002` a conta já tem caixinha; `409 EB002003` conta não está `ATIVA` |
-| `GET` | `/accounts/{account_id}/smoothing-box` | Devolve saldo, percentual, status, a média atual, o piso, o teto e o último dia fechado | `account_id` no caminho | `200`; `404 EB002001` conta sem caixinha |
-| `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001`; `404 EB002001`; `409 EB002008` pedido para o status em que ela já está |
-| `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001`; `404 EB002001`; `409 EB002003` conta não está `ATIVA`; `409 EB002004` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002005` `reference_date` é hoje, futuro ou anterior a `activated_on` |
-| `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato ou `start_date` > `end_date`; `404 EB002001` |
-| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos; `200` repetição com a mesma chave e o mesmo corpo; `400 EB000001` valor ≤ 0; `404 EB002001`; `409 EB002007` mesma chave com corpo diferente; `422 EB002006` saldo da caixinha insuficiente |
+| `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404 EB001002` conta inexistente; `409 EB002002` a conta já tem caixinha; `409 EB001006` conta não está `ATIVA` |
+| `GET` | `/accounts/{account_id}/smoothing-box` | Devolve saldo, percentual, status, a média atual, o piso, o teto e o último dia fechado | `account_id` no caminho | `200`; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha |
+| `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001` corpo fora do formato; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha; `409 EB002006` pedido para o status em que ela já está |
+| `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001` corpo fora do formato; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha; `409 EB001006` conta não está `ATIVA`; `409 EB002003` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002004` `reference_date` é hoje, futuro ou anterior a `activated_on` |
+| `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato; `400 EB000010` `start_date` > `end_date`; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha |
+| `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências do time | `value` (> 0), `idempotency_key` | `201` com `transaction_id` e saldos; `200` repetição com a mesma chave e o mesmo corpo; `400 EB000001` corpo fora do formato ou `value` ≤ 0; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha; `409 EB001007` mesma chave com corpo diferente; `422 EB002005` saldo da caixinha insuficiente |
 
-Todas as rotas exigem o token interno do time; sem ele, `403`. Valores em centavos, inteiros — nunca
+Todas as rotas exigem o token interno do time; sem ele, `403 EB000002`. Os códigos `EB000…` e `EB001…` são os do RFC do time; os `EB002…` são deste módulo. Valores em centavos, inteiros — nunca
 `float`. Datas no fuso `America/Sao_Paulo`.
 
 ### Banco de Dados (Somente diagrama)
@@ -218,7 +218,7 @@ sequenceDiagram
 ```
 
 1. Valida o corpo; `reference_date` precisa ser um dia já encerrado e não anterior a `activated_on`,
-   senão `422 EB002005` antes de qualquer consulta.
+   senão `422 EB002004` antes de qualquer consulta.
 2. Trava a conta e depois a caixinha, **sempre nessa ordem** — a mesma do resgate. A transferência do
    time trava só a conta, então espera o fechamento terminar (milissegundos) e nunca forma ciclo.
 3. Procura o fechamento de D. Não há. Procura o de D−1 (ou D é `activated_on`). Há.
@@ -244,7 +244,7 @@ sequenceDiagram
 
 1. O agendador ficou fora do ar em D−1 e pede D. A API trava conta e caixinha, não encontra o fechamento
    de D−1 e encerra a sessão sem `COMMIT`.
-2. Responde `409 EB002004` com `next_reference_date` = o primeiro dia aberto. O agendador fecha os dias
+2. Responde `409 EB002003` com `next_reference_date` = o primeiro dia aberto. O agendador fecha os dias
    em ordem até chegar a D. Fechar fora de ordem deixaria a média de D sem o dia D−1.
 
 **Fechar o dia — falha: o cliente gastou o excedente antes do fechamento**
@@ -265,8 +265,8 @@ sequenceDiagram
 1. A caixinha tem R$ 100. O cliente pede R$ 100 enquanto o fechamento de um dia `BELOW` está liberando
    R$ 60. O fechamento pegou as travas primeiro; o resgate espera na trava da conta.
 2. O fechamento confirma: caixinha com R$ 40. O resgate recebe as travas, lê R$ 40 e responde
-   `422 EB002006` com o saldo atual. Nada é gravado. A mesma chave com o mesmo corpo repetida depois
-   volta a ser avaliada; com outro corpo, `409 EB002007`.
+   `422 EB002005` com o saldo atual. Nada é gravado. A mesma chave com o mesmo corpo repetida depois
+   volta a ser avaliada; com outro corpo, `409 EB001007`.
 
 > ## Principal desafio
 >
@@ -282,4 +282,4 @@ sequenceDiagram
 >   determinística da `transaction` seguram o caso que escapar. A média lê a renda já gravada nos 28
 >   `daily_closing` anteriores, não o ledger, e cada fechamento guarda a média, o piso, o teto e os
 >   valores calculado e movido; a renda do dia exclui `BOX_RELEASE` e `BOX_WITHDRAWAL`. Os fechamentos
->   são sequenciais (`409` se faltar o dia anterior), então todo dia, inclusive a folga, entra na média.
+>   são sequenciais (`409 EB002003` se faltar o dia anterior), então todo dia, inclusive a folga, entra na média.
