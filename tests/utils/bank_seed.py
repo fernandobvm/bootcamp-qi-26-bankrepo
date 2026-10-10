@@ -1,0 +1,215 @@
+from datetime import date, timedelta
+from decimal import Decimal
+from uuid import uuid4
+
+from sqlalchemy import create_engine, text
+
+from tests.utils.db_utils import DbUtils
+from tests.utils.random_generator import RandomGenerator
+
+
+class BankSeed:
+    """Monta, direto no banco, o mundo que a caixinha precisa encontrar.
+
+    ────────────────────────────────────────────────────────────────
+    POR QUE ESTES TESTES NÃO ENTRAM SÓ "PELA PORTA DA FRENTE"
+    ────────────────────────────────────────────────────────────────
+    O combinado do projeto é preparar o teste pelas rotas da API. Aqui
+    há dois motivos para abrir uma exceção, e só para a PREPARAÇÃO — a
+    ação e a conferência continuam sendo requisições HTTP de verdade:
+
+    1. As rotas de cliente, conta e transferência são da solução
+       principal e ainda não existem nesta branch.
+    2. A caixinha trabalha com o PASSADO: renda de 15 dias atrás, uma
+       caixinha ativada há duas semanas. Nenhuma rota cria um crédito
+       com data de ontem — e não deveria criar.
+
+    Quando as rotas do time chegarem, as contas passam a nascer pelo
+    POST /customers; o histórico de renda continua precisando daqui.
+    """
+
+    _platform_account_id = None
+
+    @staticmethod
+    def _engine():
+        return create_engine(DbUtils.database_url())
+
+    @staticmethod
+    def today() -> date:
+        """O "hoje" do banco, no fuso de São Paulo — o mesmo que a API usa."""
+        engine = BankSeed._engine()
+        try:
+            with engine.connect() as connection:
+                return connection.execute(text("SELECT (NOW() AT TIME ZONE 'America/Sao_Paulo')::date")).scalar_one()
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def create_account(balance: Decimal = Decimal("0.00"), status: str = "ATIVA") -> str:
+        engine = BankSeed._engine()
+        try:
+            with engine.begin() as connection:
+                customer_id = connection.execute(
+                    text(
+                        "INSERT INTO customer (document_number, name, nationality, email, birth_date) "
+                        "VALUES (:cpf, 'Entregador Teste', 'brasileira', :email, '1995-03-10') RETURNING id"
+                    ),
+                    {"cpf": RandomGenerator.generate_cpf(), "email": f"entregador.{uuid4()}@exemplo.com.br"},
+                ).scalar_one()
+
+                account_id = connection.execute(
+                    text("INSERT INTO account (customer_id, balance, status) VALUES (:customer_id, :balance, :status) RETURNING id"),
+                    {"customer_id": customer_id, "balance": balance, "status": status},
+                ).scalar_one()
+        finally:
+            engine.dispose()
+
+        return str(account_id)
+
+    @staticmethod
+    def set_account(account_id: str, balance: Decimal = None, status: str = None) -> None:
+        engine = BankSeed._engine()
+        try:
+            with engine.begin() as connection:
+                if balance is not None:
+                    connection.execute(text("UPDATE account SET balance = :b WHERE id = :id"), {"b": balance, "id": account_id})
+                if status is not None:
+                    connection.execute(text("UPDATE account SET status = :s WHERE id = :id"), {"s": status, "id": account_id})
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def add_income(account_id: str, day: date, value: Decimal, hour: int = 12) -> None:
+        """Um crédito de renda na conta, às `hour` horas de São Paulo do dia `day`.
+
+        Vem de uma conta "plataforma" (o app de entrega pagando o
+        entregador), como uma transferência comum. O saldo da conta não é
+        mexido aqui: quem precisa de um saldo específico usa
+        `set_account`, e o teste fica dizendo em voz alta de quanto é.
+        """
+        BankSeed.add_credit(account_id, day, value, "TRANSFER", hour)
+
+    @staticmethod
+    def add_credit(account_id: str, day: date, value: Decimal, transaction_type: str, hour: int = 12) -> None:
+        """Um crédito de qualquer tipo. Nos tipos da caixinha, a origem é a própria conta."""
+        if transaction_type.startswith("BOX_"):
+            out_id, in_id = account_id, None
+        else:
+            out_id, in_id = BankSeed._platform_account(), account_id
+
+        engine = BankSeed._engine()
+        try:
+            with engine.begin() as connection:
+                transaction_id = connection.execute(
+                    text(
+                        "INSERT INTO transaction (type, account_out_id, account_in_id, value, idempotency_key, request_hash, created_at) "
+                        "VALUES (:type, :out_id, :in_id, :value, :key, :hash, "
+                        "(CAST(:day AS date) + make_interval(hours => :hour)) AT TIME ZONE 'America/Sao_Paulo') RETURNING id"
+                    ),
+                    {
+                        "type": transaction_type,
+                        "out_id": out_id,
+                        "in_id": in_id,
+                        "value": value,
+                        "key": str(uuid4()),
+                        "hash": "0" * 64,
+                        "day": day,
+                        "hour": hour,
+                    },
+                ).scalar_one()
+
+                connection.execute(
+                    text(
+                        "INSERT INTO ledger_entry (transaction_id, account_id, direction, value, balance_after, created_at) "
+                        "VALUES (:transaction_id, :account_id, 'CREDITO', :value, 0, "
+                        "(CAST(:day AS date) + make_interval(hours => :hour)) AT TIME ZONE 'America/Sao_Paulo')"
+                    ),
+                    {"transaction_id": transaction_id, "account_id": account_id, "value": value, "day": day, "hour": hour},
+                )
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def create_box(
+        account_id: str,
+        activated_on: date,
+        retention_pct: int = 50,
+        balance: Decimal = Decimal("0.00"),
+        status: str = "ACTIVE",
+    ) -> None:
+        """Uma caixinha já ativada no passado — o POST só ativaria com data de hoje."""
+        engine = BankSeed._engine()
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO smoothing_box (account_id, balance, retention_pct, status, activated_on) "
+                        "VALUES (:account_id, :balance, :pct, :status, :activated_on)"
+                    ),
+                    {
+                        "account_id": account_id,
+                        "balance": balance,
+                        "pct": retention_pct,
+                        "status": status,
+                        "activated_on": activated_on,
+                    },
+                )
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def build_history(
+        incomes: list,
+        account_balance: Decimal = Decimal("10000.00"),
+        box_balance: Decimal = Decimal("0.00"),
+        retention_pct: int = 50,
+    ) -> tuple:
+        """Conta + caixinha ativada há `len(incomes)` dias, com uma renda por dia.
+
+        O último item de `incomes` é a renda de ONTEM — o dia mais recente
+        que já pode ser fechado. Devolve a conta e a lista de dias, na
+        mesma ordem das rendas.
+        """
+        today = BankSeed.today()
+        days = [today - timedelta(days=len(incomes) - i) for i in range(len(incomes))]
+
+        account_id = BankSeed.create_account(balance=account_balance)
+        BankSeed.create_box(account_id, days[0], retention_pct=retention_pct, balance=box_balance)
+
+        for day, income in zip(days, incomes):
+            if Decimal(income) > 0:
+                BankSeed.add_income(account_id, day, Decimal(income))
+
+        return account_id, days
+
+    @staticmethod
+    def count_transactions(account_id: str, transaction_type: str) -> int:
+        engine = BankSeed._engine()
+        try:
+            with engine.connect() as connection:
+                return connection.execute(
+                    text("SELECT COUNT(*) FROM transaction WHERE account_out_id = :id AND type = :type"),
+                    {"id": account_id, "type": transaction_type},
+                ).scalar_one()
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def _platform_account() -> str:
+        # Uma conta "plataforma" por processo de teste. Se o banco foi
+        # recriado no meio (DbUtils.rollback), ela some — então confere.
+        if BankSeed._platform_account_id is not None:
+            engine = BankSeed._engine()
+            try:
+                with engine.connect() as connection:
+                    exists = connection.execute(
+                        text("SELECT 1 FROM account WHERE id = :id"), {"id": BankSeed._platform_account_id}
+                    ).first()
+            finally:
+                engine.dispose()
+
+            if exists:
+                return BankSeed._platform_account_id
+
+        BankSeed._platform_account_id = BankSeed.create_account()
+        return BankSeed._platform_account_id

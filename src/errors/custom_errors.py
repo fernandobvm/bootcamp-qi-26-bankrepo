@@ -99,3 +99,126 @@ class InvalidBirthdate(QIException):
         description = f"The birthdate {birthdate} is not a real date."
         translation = "A data de nascimento informada não existe."
         super().__init__(title, self.code, http_status, description, translation)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Núcleo do banco — o mínimo que a caixinha precisa
+# ────────────────────────────────────────────────────────────────────
+# O RFC ainda deixa o código de "conta inexistente" como EB00XXXX. Este
+# é provisório: quando o time fixar o dele, troca-se aqui e só aqui.
+
+
+class NotFoundAccount(QIException):
+    code = "EB001030"
+
+    def __init__(self, account_id) -> None:
+        title = "Account not Found"
+        http_status = 404
+        description = f"Account {account_id} was not found."
+        translation = "A conta informada não existe."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Caixinha de Equilíbrio — EB002xxx, como no RFC
+# ────────────────────────────────────────────────────────────────────
+
+
+class NotFoundSmoothingBox(QIException):
+    code = "EB002001"
+
+    def __init__(self, account_id) -> None:
+        title = "Smoothing box not Found"
+        http_status = 404
+        description = f"Account {account_id} has no smoothing box."
+        translation = "Esta conta não tem caixinha."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class DuplicatedSmoothingBox(QIException):
+    code = "EB002002"
+
+    def __init__(self, account_id) -> None:
+        title = "Smoothing box already exists"
+        http_status = 409
+        description = f"Account {account_id} already has a smoothing box."
+        translation = "Esta conta já tem uma caixinha."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class AccountNotActive(QIException):
+    code = "EB002003"
+
+    def __init__(self, account_id, account_status) -> None:
+        title = "Account is not active"
+        http_status = 409
+        description = f"Account {account_id} is {account_status}, and only ATIVA accounts use the smoothing box."
+        translation = "A conta não está ATIVA."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class PreviousDayNotClosed(QIException):
+    """Pediram o dia D e o dia anterior ainda está aberto.
+
+    Os fechamentos são em sequência porque a média de D precisa de D−1
+    dentro dela. O corpo diz qual é o primeiro dia em aberto, e quem
+    chamou fecha a partir dali.
+    """
+
+    code = "EB002004"
+
+    def __init__(self, reference_date, next_reference_date) -> None:
+        title = "Previous day not closed"
+        http_status = 409
+        description = (
+            f"Cannot close {reference_date.isoformat()}: the first open day is "
+            f"{next_reference_date.isoformat()}."
+        )
+        translation = "O dia anterior ainda não foi fechado."
+        super().__init__(title, self.code, http_status, description, translation)
+        self.extra = {"next_reference_date": next_reference_date.isoformat()}
+
+
+class InvalidReferenceDate(QIException):
+    code = "EB002005"
+
+    def __init__(self, reference_date, reason) -> None:
+        title = "Invalid reference date"
+        http_status = 422
+        description = f"Cannot close {reference_date.isoformat()}: {reason}."
+        translation = "Este dia não pode ser fechado."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InsufficientBoxBalance(QIException):
+    code = "EB002006"
+
+    def __init__(self, requested, box_balance) -> None:
+        title = "Insufficient smoothing box balance"
+        http_status = 422
+        description = f"Requested {requested}, but the smoothing box holds {box_balance}."
+        translation = "O saldo da caixinha não cobre o resgate."
+        super().__init__(title, self.code, http_status, description, translation)
+        self.extra = {"box_balance": f"{box_balance:.2f}"}
+
+
+class IdempotencyKeyReused(QIException):
+    code = "EB002007"
+
+    def __init__(self, idempotency_key) -> None:
+        title = "Idempotency key reused"
+        http_status = 409
+        description = f"The idempotency_key {idempotency_key} was already used with a different request."
+        translation = "Esta chave de idempotência já foi usada com outro pedido."
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class SmoothingBoxSameStatus(QIException):
+    code = "EB002008"
+
+    def __init__(self, box_status) -> None:
+        title = "Smoothing box already in this status"
+        http_status = 409
+        description = f"The smoothing box is already {box_status}."
+        translation = "A caixinha já está neste status."
+        super().__init__(title, self.code, http_status, description, translation)
