@@ -1,28 +1,6 @@
 from errors import QIException
 
 
-class NotFoundSampleEntity(QIException):
-    code = "QIT001001"
-
-    def __init__(self, sample_entity_key) -> None:
-        title = "Entity not Found"
-        http_status = 404
-        description = f"Entity with key {sample_entity_key} was not found."
-        translation = f"A entidade com chave {sample_entity_key} não foi encontrada."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class SampleEntityFinalStatus(QIException):
-    code = "QIT001002"
-
-    def __init__(self, old_status, new_status) -> None:
-        title = "Entity cannot change status"
-        http_status = 409
-        description = f"Entity with status {old_status} cannot update to {new_status}."
-        translation = "Essa entidade não pode ser atualizada."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
 class InvalidDocumentNumber(QIException):
     code = "QIT001003"
 
@@ -53,17 +31,6 @@ class DuplicatedEmail(QIException):
         http_status = 409
         description = f"There is already an entity with the email {email}."
         translation = "Já existe um cadastro com este e-mail."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class UnderageSampleEntity(QIException):
-    code = "QIT001006"
-
-    def __init__(self, age, minimum_age) -> None:
-        title = "Entity is underage"
-        http_status = 422
-        description = f"The entity is {age} years old, and the minimum is {minimum_age}."
-        translation = f"É preciso ter pelo menos {minimum_age} anos."
         super().__init__(title, self.code, http_status, description, translation)
 
 

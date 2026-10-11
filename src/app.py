@@ -13,7 +13,6 @@ from resources import (
     AccountResource,
     CustomerResource,
     HealthCheckResource,
-    SampleEntityResource,
     SmoothingBoxResource,
     TransactionResource,
 )
@@ -33,7 +32,6 @@ def create_app() -> FastAPI:
     register_request_context_middleware(application)
 
     health_check_resource = HealthCheckResource()
-    sample_entity_resource = SampleEntityResource()
 
     application.add_api_route("/", health_check_resource.on_get_home, methods=["GET"])
     application.add_api_route(
@@ -42,31 +40,6 @@ def create_app() -> FastAPI:
         methods=["GET"]
     )
 
-    application.add_api_route(
-        "/sample_entity",
-        sample_entity_resource.on_post,
-        methods=["POST"],
-    )
-    application.add_api_route(
-        "/sample_entity/{sample_entity_key}",
-        sample_entity_resource.on_get_by_key,
-        methods=["GET"],
-    )
-    application.add_api_route(
-        "/sample_entity/{sample_entity_key}",
-        sample_entity_resource.on_put_by_key,
-        methods=["PUT"],
-    )
-    application.add_api_route(
-        "/webhook/sample_entity/{sample_entity_key}/increment_counter",
-        sample_entity_resource.on_put_increment_counter,
-        methods=["PUT"],
-    )
-    application.add_api_route(
-        "/sample_entities",
-        sample_entity_resource.on_get_list,
-        methods=["GET"],
-    )
 
     customer_resource = CustomerResource()
     account_resource = AccountResource()
