@@ -11,8 +11,6 @@ DEFAULT_PAGE = 0
 
 
 class AccountResource:
-    """Saldo, status e extrato de uma conta."""
-
     def on_get(self, account_id: str) -> JSONResponse:
         controller = AccountController()
         account = controller.get(account_id)
@@ -28,7 +26,6 @@ class AccountResource:
 
     @SchemaHandler.validate_query_params("get_account_transactions.json")
     def on_get_transactions(self, account_id: str, request: Request) -> JSONResponse:
-        """O extrato paginado, no mesmo envelope dos fechamentos da caixinha."""
         controller = AccountController()
 
         query_params = request.query_params

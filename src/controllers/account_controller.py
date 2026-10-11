@@ -16,7 +16,6 @@ ALLOWED_TRANSITIONS = {
 
 
 class AccountController(AccountBaseController):
-    """Saldo, ciclo de vida e extrato de uma conta."""
 
     def __init__(self) -> None:
         super().__init__(__name__)
@@ -30,14 +29,7 @@ class AccountController(AccountBaseController):
         return AccountDTO.obj_to_dict(account)
 
     def update_status(self, account_id: str, payload: dict) -> dict:
-        """Muda o status, respeitando ALLOWED_TRANSITIONS.
-
-        Encerrar exige saldo zero na conta e na caixinha: uma conta
-        ENCERRADA não movimenta mais nada, e o dinheiro que estivesse
-        dentro ficaria preso. A trava segue a ordem de sempre — conta,
-        depois caixinha —, então nenhum fechamento ou resgate muda os
-        saldos entre a conferência e o `commit`.
-        """
+        
         new_status = payload["status"]
 
         account = self._get_account(account_id, for_update=True)
@@ -63,7 +55,7 @@ class AccountController(AccountBaseController):
         return account_dto
 
     def list_statement(self, account_id: str, limit: int, offset: int, filters: dict) -> dict:
-        """O extrato, na ordem do fluxo do RFC: datas, conta, status, lançamentos."""
+        
         start_date = None
         if filters.get("start_date") is not None:
             start_date = self._parse_date("start_date", filters["start_date"], InvalidParameter)

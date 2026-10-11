@@ -5,7 +5,6 @@ from tests.utils import BankApi, PayloadGenerator, RequestGenerator
 
 class TestPayment:
     def test_debits_without_fee(self):
-        """A tarifa é da transferência; o pagamento debita só o valor."""
         account_id = BankApi.create_account(balance="100.00")
 
         status, payment = RequestGenerator.POST_payment(account_id, PayloadGenerator.create_operation_payload("30.00"))
@@ -47,7 +46,6 @@ class TestPayment:
         assert BankApi.balance(account_id) == "70.00"
 
     def test_one_key_is_one_operation(self):
-        """A chave vale por conta, para qualquer operação: usada num depósito, não serve para um pagamento."""
         account_id = BankApi.create_account()
         key = str(uuid4())
         RequestGenerator.POST_deposit(account_id, PayloadGenerator.create_operation_payload("50.00", key))

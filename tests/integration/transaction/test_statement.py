@@ -5,7 +5,6 @@ from tests.utils import BankApi, PayloadGenerator, RequestGenerator
 
 
 def account_with_movements(number_of_payments: int) -> str:
-    """Um depósito de 100 e `number_of_payments` pagamentos de 1,00: N + 1 linhas no extrato."""
     account_id = BankApi.create_account(balance="100.00")
 
     for _ in range(number_of_payments):
@@ -17,7 +16,6 @@ def account_with_movements(number_of_payments: int) -> str:
 
 class TestStatement:
     def test_pages_carry_data_limit_page_and_is_last_page(self):
-        """Extrato paginado: cinco linhas, de duas em duas, sem repetir nem pular nenhuma."""
         account_id = account_with_movements(4)
 
         seen_ids = []

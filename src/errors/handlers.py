@@ -18,11 +18,6 @@ logger = get_logger(__name__)
 
 
 def qi_exception_to_response(exception: QIException) -> JSONResponse:
-    """Traduz um erro nosso para a resposta JSON que o cliente recebe.
-
-    Este é o único lugar do projeto que sabe como um erro vira HTTP.
-    Trocar de framework significa reescrever esta função — e mais nada.
-    """
     body = {
         "title": exception.title,
         "description": exception.description,
@@ -30,9 +25,6 @@ def qi_exception_to_response(exception: QIException) -> JSONResponse:
         "code": exception.code,
     }
 
-    # Alguns erros carregam um dado que ajuda quem chamou a se corrigir
-    # sozinho — o próximo dia a fechar, o saldo que havia. Ele vai junto,
-    # ao lado dos quatro campos de sempre.
     body.update(getattr(exception, "extra", None) or {})
 
     return JSONResponse(status_code=exception.http_status, content=body)
@@ -53,8 +45,6 @@ def describe_validation_error(error: dict) -> str:
 
 
 def register_error_handlers(application: FastAPI) -> None:
-    """Ensina a aplicação a responder cada tipo de erro."""
-
     @application.exception_handler(QIException)
     def handle_qi_exception(request: Request, exception: QIException) -> JSONResponse:
         return qi_exception_to_response(exception)
@@ -82,20 +72,6 @@ def register_error_handlers(application: FastAPI) -> None:
         description = describe_validation_error(first_error)
         origin = first_error.get("loc", [""])[0]
 
-        # Este ramo NAO e alcancado hoje, e vale saber por que — e a
-        # unica pista de que existem duas validacoes neste projeto, nao
-        # uma.
-        #
-        # Quem julga a query string aqui e o JSON Schema, antes do
-        # FastAPI (veja utils/schema_handler.py). Um ?page=-3 morre la,
-        # com 400 EB000001 — nunca chega a virar RequestValidationError.
-        # E os parametros de endereco sao todos `str`, que nao tem como
-        # falhar validacao.
-        #
-        # O ramo fica de pe para o dia em que alguma rota declarar um
-        # parametro tipado (page: int) e passar a depender do FastAPI
-        # para isso. O EB000010 que o cliente ve hoje vem de outro
-        # lugar: do controller, quando birthdate_from > birthdate_to.
         if origin in ("query", "path"):
             return qi_exception_to_response(InvalidParameter(description))
 

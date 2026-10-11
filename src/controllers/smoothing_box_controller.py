@@ -28,36 +28,15 @@ NOT_INCOME_TYPES = [Transaction.BOX_RELEASE, Transaction.BOX_WITHDRAWAL]
 
 
 class SmoothingBoxController(AccountBaseController):
-    """As regras da Caixinha de Equilíbrio: ativar, fechar o dia e resgatar.
-
-    ────────────────────────────────────────────────────────────────
-    A ORDEM DAS TRAVAS — CONTA, DEPOIS CAIXINHA, SEMPRE
-    ────────────────────────────────────────────────────────────────
-    Fechamento e resgate mexem em dois saldos, e os dois travam as duas
-    linhas na MESMA ordem: primeiro a conta, depois a caixinha. Com a
-    ordem fixa, duas requisições nunca ficam cada uma segurando a linha
-    que a outra espera (o deadlock). A transferência do time trava só a
-    conta, então ela espera o fechamento terminar e segue.
-
-    E o `commit` é sempre a última linha antes do `return`: as travas só
-    saem quando tudo — os dois saldos, os lançamentos e o fechamento —
-    já está gravado junto.
-    """
 
     def __init__(self) -> None:
         super().__init__(__name__)
         self.smoothing_box_repository = SmoothingBoxRepository(self.context)
 
-    # ────────────────────────────────────────────────────────────────
-    # Ativar, consultar, alterar
-    # ────────────────────────────────────────────────────────────────
 
     def create(self, account_id: str, payload: dict) -> dict:
         retention_pct = payload.get("retention_pct", DEFAULT_RETENTION_PCT)
 
-        # A trava na conta serializa duas ativações simultâneas: a segunda
-        # espera, encontra a caixinha da primeira e recebe 409. O UNIQUE
-        # (account_id) logo abaixo é a rede de segurança se algo escapar.
         account = self._get_account(account_id, for_update=True)
         self._check_account_active(account)
 
@@ -99,24 +78,8 @@ class SmoothingBoxController(AccountBaseController):
 
         return box_dto
 
-    # ────────────────────────────────────────────────────────────────
-    # Fechar o dia
-    # ────────────────────────────────────────────────────────────────
-
     def close_day(self, account_id: str, raw_reference_date: str) -> Tuple[dict, bool]:
-        """Fecha um dia. Devolve o fechamento e se ele é NOVO (201) ou já existia (200).
-
-        Os passos seguem o fluxo "Fechar o dia — caminho feliz" do RFC, e
-        a ordem é a garantia:
-
-        1. Dia que ainda não acabou é recusado antes de qualquer trava.
-        2. Trava a conta e a caixinha.
-        3. O dia já está fechado? Devolve o fechamento existente e não
-           move nada — é aqui que um reenvio, ou a segunda de duas
-           requisições simultâneas, para.
-        4. O dia anterior precisa estar fechado.
-        5. Calcula e, se houver o que mover, move e grava tudo junto.
-        """
+        
         reference_date = self._parse_date("reference_date", raw_reference_date)
 
         today = self.account_repository.get_today()
@@ -156,10 +119,6 @@ class SmoothingBoxController(AccountBaseController):
             transaction_id = self._move_closing_amount(account, box, reference_date, result)
             closing = self.smoothing_box_repository.add_closing(box.id, reference_date, result, transaction_id)
         except IntegrityError:
-            # Alguém fechou o mesmo dia por um caminho que escapou da
-            # trava. O rollback desfaz TUDO o que esta requisição fez,
-            # inclusive o movimento de dinheiro, e quem responde é o
-            # fechamento que chegou primeiro.
             self.session.rollback()
             existing_closing = self._get_closing_after_conflict(account.id, reference_date)
             return SmoothingBoxDTO.closing_to_dict(existing_closing), False
@@ -196,19 +155,8 @@ class SmoothingBoxController(AccountBaseController):
             "is_last_page": is_last_page,
         }
 
-    # ────────────────────────────────────────────────────────────────
-    # Resgatar
-    # ────────────────────────────────────────────────────────────────
-
     def withdraw(self, account_id: str, payload: dict) -> dict:
-        """Tira dinheiro da caixinha e põe na conta. Idempotente pela chave.
-
-        Um reenvio com a mesma chave e o mesmo valor devolve o corpo da
-        primeira vez, montado a partir do que ficou gravado; com a mesma
-        chave e outro valor, 409. A comparação é pelo `request_hash`,
-        calculado sobre o valor JÁ normalizado: "50" e "50.00" são o
-        mesmo pedido.
-        """
+        
         value = self._parse_money("value", payload["value"])
         idempotency_key = payload["idempotency_key"]
         request_hash = self._hash_request({"operation": Transaction.BOX_WITHDRAWAL, "value": f"{value:.2f}"})
@@ -249,21 +197,10 @@ class SmoothingBoxController(AccountBaseController):
 
         return withdrawal_dto
 
-    # ────────────────────────────────────────────────────────────────
-    # Peças internas
-    # ────────────────────────────────────────────────────────────────
-
     def _move_closing_amount(
         self, account: Account, box: SmoothingBox, reference_date: date, result: dict
     ) -> Optional[UUID]:
-        """Move o valor do fechamento entre conta e caixinha, se houver valor.
-
-        A chave de idempotência da transação é DETERMINÍSTICA —
-        `closing:{box_id}:{data}` —, e não um número aleatório: dois
-        fechamentos do mesmo dia gerariam a mesma chave e o segundo
-        esbarraria no UNIQUE(account_out_id, idempotency_key). É uma
-        segunda rede, além do UNIQUE do próprio fechamento.
-        """
+        
         amount = result["amount_moved"]
 
         if amount <= 0:
@@ -316,7 +253,6 @@ class SmoothingBoxController(AccountBaseController):
         return SmoothingBoxDTO.withdrawal_to_dict(transaction, box_entry, ledger_entry)
 
     def _box_to_dict(self, box: SmoothingBox) -> dict:
-        """A caixinha, com a média e as faixas que valeriam no PRÓXIMO fechamento."""
         window_incomes = self.smoothing_box_repository.get_window_incomes(box.id, None, WINDOW_DAYS)
         current_rule = calculate_closing(
             window_incomes=window_incomes,

@@ -7,15 +7,6 @@ from models.transaction import Transaction
 
 
 class DailyClosing(Base):
-    """Um dia fechado, com tudo o que foi usado na conta daquele dia.
-
-    Cada número que entrou na decisão fica gravado — a média, o piso, o
-    teto, quantos dias a média tinha —, e é isso que torna o fechamento
-    reproduzível: refazer o dia no papel com estas colunas dá o mesmo
-    valor. A renda gravada aqui é também o que os próximos fechamentos
-    leem para calcular a média; o ledger não é relido.
-    """
-
     __tablename__ = "daily_closing"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

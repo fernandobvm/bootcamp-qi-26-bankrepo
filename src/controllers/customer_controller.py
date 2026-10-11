@@ -12,12 +12,6 @@ from utils.document_number import is_valid_cpf
 
 
 class CustomerController(BaseController):
-    """Cadastro de cliente: o cliente e a conta dele nascem no mesmo commit.
-
-    Não existe cliente sem conta, nem conta sem cliente. Por isso os dois
-    INSERTs moram na mesma transação de banco: se a conta falhar, o
-    cliente também não fica.
-    """
 
     def __init__(self) -> None:
         super().__init__(__name__)

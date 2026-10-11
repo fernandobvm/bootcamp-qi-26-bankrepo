@@ -3,50 +3,21 @@ from decimal import Decimal
 
 
 SERVICE_ROOT = os.path.abspath(os.path.dirname(__file__))
-
-# Onde moram os arquivos de schema — os .json que descrevem o formato
-# que cada requisicao precisa ter. Quem le essa pasta e o
-# src/utils/schema_handler.py.
 SCHEMA_PATH = os.path.join(SERVICE_ROOT, "schemas")
-
 APP_ENV = os.environ.get("APP_ENV", "local")
 SERVICE_NAME = os.environ.get("SERVICE_NAME", "bootcamp-api")
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
-# A API de boletos: o serviço de fora que este projeto chama pra emitir
-# uma cobrança (veja src/connectors/). O endereço vem do ambiente, como
-# tudo aqui — na sua máquina ele aponta pro mock server do sábado 4; em
-# produção, apontaria pro serviço de verdade. O código não sabe a
-# diferença, e esse é o ponto.
 BANKSLIP_API_URL = os.environ.get("BANKSLIP_API_URL", "http://localhost:8080")
 BANKSLIP_API_INTERNAL_TOKEN = os.environ.get("BANKSLIP_API_INTERNAL_TOKEN", "default_token")
-
-# Quantos segundos esperar pelo serviço de boletos antes de desistir.
-# Todo connector TEM um timeout — o porquê está em
-# src/connectors/rest_connector.py.
 BANKSLIP_API_TIMEOUT = int(os.environ.get("BANKSLIP_API_TIMEOUT", "5"))
-
-# O fuso em que um "dia" do banco começa e termina. A caixinha fecha a
-# renda por dia, e o dia do entregador é o do relógio dele, não o de
-# Greenwich: um crédito às 22h de segunda em São Paulo já é terça em UTC.
 BANK_TIMEZONE = "America/Sao_Paulo"
 
-# A tarifa da transferência, cobrada da conta de origem no mesmo commit
-# da transferência. As primeiras FREE_TRANSFERS_PER_MONTH transferências
-# de cada mês (no fuso do banco) são isentas; a partir daí, a tarifa é
-# TRANSFER_FEE_RATE do valor, nunca menos que TRANSFER_FEE_MINIMUM. A
-# regra inteira mora em src/controllers/transfer_fee_rule.py, e o porquê
-# de cada número está no RFC.
 FREE_TRANSFERS_PER_MONTH = 5
 TRANSFER_FEE_RATE = Decimal("0.01")
 TRANSFER_FEE_MINIMUM = Decimal("1.00")
 
-# Rotas públicas: não exigem o header INTERNAL-TOKEN. São as duas que
-# precisam responder pra quem ainda não tem token nenhum: a raiz, que
-# diz quem é este serviço, e o health check, que o Docker consulta pra
-# saber se a API já está de pé.
 BYPASS_ENDPOINTS = [
     "/",
     "/health_check",

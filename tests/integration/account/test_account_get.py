@@ -22,11 +22,6 @@ class TestAccountGet:
             assert response["code"] == "EB001002"
 
     def test_account_only_exists_with_a_customer(self):
-        """Conta só nasce com cliente: não há rota que crie uma conta solta.
-
-        Um depósito numa chave inventada não cria a conta de brinde —
-        responde 404, e a chave continua sem conta depois.
-        """
         invented_account_id = str(uuid4())
 
         status, response = RequestGenerator.POST_deposit(

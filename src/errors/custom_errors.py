@@ -24,14 +24,6 @@ class SampleEntityFinalStatus(QIException):
 
 
 class InvalidDocumentNumber(QIException):
-    """O CPF tem o formato certo e não existe.
-
-    422, e não 400, de propósito: 400 quer dizer "não consegui ler o seu
-    pedido". Aqui a API leu, entendeu, e o valor é que não pode existir —
-    os dois últimos dígitos não batem com a conta. A diferença está
-    explicada em src/utils/document_number.py.
-    """
-
     code = "QIT001003"
 
     def __init__(self, document_number) -> None:
@@ -43,13 +35,6 @@ class InvalidDocumentNumber(QIException):
 
 
 class DuplicatedDocumentNumber(QIException):
-    """Já existe um cadastro com este CPF.
-
-    409 Conflict: o pedido está correto em si, e o que impede é o que já
-    está no banco. É a mesma família do SampleEntityFinalStatus aqui em
-    cima — conflito com o que já existe, não erro de quem pediu.
-    """
-
     code = "QIT001004"
 
     def __init__(self, document_number) -> None:
@@ -83,14 +68,6 @@ class UnderageSampleEntity(QIException):
 
 
 class InvalidBirthdate(QIException):
-    """A data tem o formato certo e não existe no calendário.
-
-    Existe porque o `pattern` do schema sabe contar dígitos, não dias:
-    "2025-02-30" e "9999-99-99" passam pelo regex e morrem no
-    `date.fromisoformat`. Sem esta classe, esse ValueError virava 500 —
-    a API culpando a si mesma por um erro de quem chamou.
-    """
-
     code = "QIT001007"
 
     def __init__(self, birthdate) -> None:
@@ -99,12 +76,6 @@ class InvalidBirthdate(QIException):
         description = f"The birthdate {birthdate} is not a real date."
         translation = "A data de nascimento informada não existe."
         super().__init__(title, self.code, http_status, description, translation)
-
-
-# ────────────────────────────────────────────────────────────────────
-# Núcleo do banco — EB001xxx, a tabela "Códigos de erro" do RFC
-# ────────────────────────────────────────────────────────────────────
-
 
 class NotFoundCustomer(QIException):
     code = "EB001001"
@@ -118,12 +89,6 @@ class NotFoundCustomer(QIException):
 
 
 class NotFoundAccount(QIException):
-    """Conta inexistente — ou, numa transferência, a conta de ORIGEM.
-
-    A de destino tem código próprio (EB001005): quem chamou precisa saber
-    qual das duas pontas está errada sem ler a descrição.
-    """
-
     code = "EB001002"
 
     def __init__(self, account_id) -> None:
@@ -135,13 +100,6 @@ class NotFoundAccount(QIException):
 
 
 class InvalidCustomerDocument(QIException):
-    """O CPF tem a máscara certa e os dígitos verificadores não batem.
-
-    O mesmo 422 do InvalidDocumentNumber da sample entity, e pelo mesmo
-    motivo (src/utils/document_number.py): a API leu o pedido, e o valor
-    é que não pode existir. Código separado porque este é do banco.
-    """
-
     code = "EB001003"
 
     def __init__(self, document_number) -> None:
@@ -222,15 +180,6 @@ class SameAccountTransfer(QIException):
 
 
 class AccountStatusTransitionNotAllowed(QIException):
-    """O ciclo de vida da conta só anda por estes caminhos:
-
-        ATIVA ⇄ SUSPENSA
-        ATIVA ou SUSPENSA → ENCERRADA (e dali não sai mais)
-
-    Pedir o status em que a conta já está também cai aqui: não há
-    transição nenhuma a fazer.
-    """
-
     code = "EB001010"
 
     def __init__(self, old_status, new_status) -> None:
@@ -242,8 +191,6 @@ class AccountStatusTransitionNotAllowed(QIException):
 
 
 class AccountHasBalance(QIException):
-    """Encerrar uma conta com dinheiro dentro deixaria o dinheiro preso nela."""
-
     code = "EB001011"
 
     def __init__(self, balance, box_balance) -> None:
@@ -256,11 +203,6 @@ class AccountHasBalance(QIException):
         translation = "A conta só pode ser encerrada com saldo zero, inclusive na caixinha."
         super().__init__(title, self.code, http_status, description, translation)
         self.extra = {"balance": f"{balance:.2f}", "box_balance": f"{box_balance:.2f}"}
-
-
-# ────────────────────────────────────────────────────────────────────
-# Caixinha de Equilíbrio — EB002xxx, como no RFC
-# ────────────────────────────────────────────────────────────────────
 
 
 class NotFoundSmoothingBox(QIException):
@@ -286,13 +228,6 @@ class DuplicatedSmoothingBox(QIException):
 
 
 class PreviousDayNotClosed(QIException):
-    """Pediram o dia D e o dia anterior ainda está aberto.
-
-    Os fechamentos são em sequência porque a média de D precisa de D−1
-    dentro dela. O corpo diz qual é o primeiro dia em aberto, e quem
-    chamou fecha a partir dali.
-    """
-
     code = "EB002003"
 
     def __init__(self, reference_date, next_reference_date) -> None:

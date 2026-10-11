@@ -47,8 +47,6 @@ class TestAccountStatus:
 
     def test_cannot_close_with_money_in_the_smoothing_box(self):
         account_id = BankApi.create_account()
-        # A caixinha só junta saldo com dias de fechamento; o atalho é
-        # criá-la já com saldo (a exceção documentada no BankSeed).
         BankSeed.create_box(account_id, BankApi.today(), balance=Decimal("25.00"))
 
         status, response = RequestGenerator.PATCH_account(account_id, {"status": "ENCERRADA"})

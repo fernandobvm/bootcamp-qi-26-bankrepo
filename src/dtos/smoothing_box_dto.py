@@ -5,8 +5,6 @@ from models import BoxEntry, DailyClosing, LedgerEntry, SmoothingBox, Transactio
 
 
 class SmoothingBoxDTO:
-    """Traduz a caixinha, os fechamentos e os resgates no JSON da resposta."""
-
     @staticmethod
     def box_to_dict(box: SmoothingBox, current_rule: dict, last_closing: Optional[DailyClosing], next_date) -> dict:
         if last_closing is not None:
@@ -31,7 +29,6 @@ class SmoothingBoxDTO:
 
     @staticmethod
     def closing_to_dict(closing: DailyClosing) -> dict:
-        """O fechamento com tudo o que entrou na conta — o suficiente para refazê-la."""
         if closing.transaction_id is not None:
             transaction_id = str(closing.transaction_id)
         else:
@@ -62,12 +59,6 @@ class SmoothingBoxDTO:
 
     @staticmethod
     def withdrawal_to_dict(transaction: Transaction, box_entry: BoxEntry, ledger_entry: LedgerEntry) -> dict:
-        """O resgate, montado SÓ com o que ficou gravado.
-
-        Os saldos vêm do `balance_after` dos dois lançamentos, e não do
-        saldo de agora. É isso que deixa um reenvio da mesma chave, dias
-        depois, receber exatamente o corpo da primeira resposta.
-        """
         return {
             "transaction_id": str(transaction.id),
             "value": money(transaction.value),

@@ -3,26 +3,7 @@ from constants import BANKSLIP_API_INTERNAL_TOKEN, BANKSLIP_API_TIMEOUT, BANKSLI
 
 
 class BankSlipConnector(RestConnector):
-    """Fala com a API de boletos — o serviço de cobrança.
-
-    Este é o connector de exemplo do projeto. Ele conversa com um
-    serviço que emite boletos: você pede a emissão com valor e vencimento
-    e recebe de volta a chave do boleto criado.
-
-    Repare no que ele NÃO tem: nenhum requests, nenhuma URL escrita no
-    código. Isso mora no RestConnector, uma vez só. O que mora aqui é o
-    que é específico DESTE serviço: quais endpoints existem e qual o
-    formato de cada payload.
-
-    Os métodos devolvem a resposta como veio (status e corpo) — quem
-    decide o que fazer com um 404 ou um erro é a regra de negócio, no
-    controller.
-
-    Não existe uma API de boletos de verdade rodando na sua máquina —
-    e não precisa: no sábado 4 a gente sobe um MOCK no lugar dela, e
-    este arquivo não muda uma linha. Só muda a BANKSLIP_API_URL.
-    """
-
+    
     def __init__(self) -> None:
         super().__init__(
             class_name=__name__,

@@ -24,22 +24,13 @@ MAXIMUM_AGE = 80
 
 
 class SampleEntityController(BaseController):
-    """As regras de negócio. Aqui mora o "pode" e o "não pode"."""
 
     def __init__(self) -> None:
         super().__init__(__name__)
         self.sample_entity_repository = SampleEntityRepository(self.context)
 
     def create(self, sample_entity_data: dict) -> dict:
-        """Confere quem está entrando, e só então cria.
-
-        As quatro perguntas abaixo acontecem ANTES de qualquer escrita, e
-        essa ordem é a regra: uma recusa não pode deixar meia entidade no
-        banco. Repare que nenhuma delas é sobre FORMATO — isso o schema
-        já cobrou lá na porta. Aqui é sobre o que só se sabe olhando o
-        mundo: se o número existe, se alguém já usou, que idade a pessoa
-        tem hoje.
-        """
+        
         self.logger.debug("Criando uma nova Sample Entity")
 
         document_number = sample_entity_data["document_number"]
@@ -62,10 +53,6 @@ class SampleEntityController(BaseController):
 
         sample_entity = self.sample_entity_repository.create(sample_entity_data=sample_entity_data)
 
-        # Passar da idade máxima não impede o cadastro: ele nasce em
-        # "failed". É a diferença entre recusar o pedido e aceitá-lo com
-        # outro desfecho — e as duas regras moram lado a lado de
-        # propósito, pra que a diferença fique à vista.
         if age > MAXIMUM_AGE:
             new_status = SampleEntityStatus.FAILED
         else:
@@ -89,23 +76,7 @@ class SampleEntityController(BaseController):
         return SampleEntityDTO.obj_to_dict(sample_entity)
 
     def get_list(self, limit: int, offset: int, filters: dict) -> dict:
-        """A pagina pedida, depois de conferir se o pedido faz sentido.
-
-        Um intervalo de nascimento de cabeca pra baixo — comeco depois
-        do fim — nunca pode achar ninguem. Devolver zero linhas nesse
-        caso mente por omissao: parece que a busca rodou e nao
-        encontrou, quando na verdade a pergunta e que nao tinha
-        resposta possivel.
-
-        Quem decide que um pedido nao pode ser respondido e este
-        controller. O resource fala HTTP, nao julga pedido.
-
-        Repare no que NAO esta mais aqui: a lista de status validos.
-        Aquilo era conferir se um valor pertence a um conjunto fixo —
-        exatamente o que um `enum` de JSON Schema faz, e agora faz, no
-        src/schemas/get_sample_entities.json. O que sobrou e o que
-        nenhum schema sabe fazer: comparar dois campos ENTRE SI.
-        """
+        
         birthdate_from = filters.get("birthdate_from")
         birthdate_to = filters.get("birthdate_to")
 
@@ -125,8 +96,7 @@ class SampleEntityController(BaseController):
 
         sample_entities_list = self.sample_entity_repository.list_page(limit, offset, filters)
 
-        # Pedimos um a mais que o limite só pra saber se existe próxima
-        # página. Se veio o extra, ele não entra na resposta.
+        
         is_last_page = True
         if len(sample_entities_list) > limit:
             is_last_page = False
@@ -171,13 +141,7 @@ class SampleEntityController(BaseController):
             raise SampleEntityFinalStatus(old_status, new_status)
 
     def _parse_birthdate(self, raw_birthdate: str) -> date:
-        """Converte a data, ou recusa com 422 em vez de 500.
-
-        O schema já garantiu o FORMATO (quatro dígitos, traço, dois,
-        traço, dois). O que ele não sabe é quantos dias fevereiro tem —
-        um `pattern` conta caracteres, não consulta calendário. Por isso
-        "2025-02-30" chega aqui intacto, e é aqui que ele para.
-        """
+        
         try:
             return date.fromisoformat(raw_birthdate)
         except ValueError:
@@ -187,8 +151,6 @@ class SampleEntityController(BaseController):
         today = date.today()
         age = today.year - birthdate.year
 
-        # Quem ainda não fez aniversário este ano tem um ano a menos do
-        # que a subtração acima diz.
         if (today.month, today.day) < (birthdate.month, birthdate.day):
             age = age - 1
 

@@ -44,17 +44,6 @@ class TestHealthCheck:
         assert response.response_json["code"] == "EB000405"
 
     def test_error_translation_keeps_accents(self):
-        """O acento da fonte chega no cliente — nas duas portas de erro da API.
-
-        São dois caminhos diferentes, e por isso são duas requisições num
-        teste só. O 403 nasce DENTRO do middleware de token, que devolve a
-        resposta com a requisição ainda a caminho da rota; o 404 nasce num
-        exception handler, bem mais pra dentro. Um só não prova o outro.
-
-        O que se defende aqui é o campo "translation" em português de
-        verdade: JSON é UTF-8, o acento cabe nele, e a API não tem por que
-        raspar cedilha e til de um texto escrito pra brasileiro ler.
-        """
         response = ClientRequisition.send("PUT", "/sample")
         assert response.response_status == 403
         assert response.response_json["code"] == "EB000002"

@@ -5,13 +5,6 @@ from models.base import Base
 
 
 class Customer(Base):
-    """O cliente, como no diagrama do RFC. Nasce junto com a conta.
-
-    O CPF fica gravado com a máscara (`000.000.000-00`, por isso o
-    CHAR(14)): é o mesmo texto que chega no POST e o que o `UNIQUE`
-    compara.
-    """
-
     __tablename__ = "customer"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

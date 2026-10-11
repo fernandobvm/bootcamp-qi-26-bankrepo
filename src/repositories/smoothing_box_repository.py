@@ -10,8 +10,6 @@ from models import BoxEntry, DailyClosing, LedgerEntry, SmoothingBox
 
 
 class SmoothingBoxRepository:
-    """A caixinha, os lançamentos dela e os dias fechados."""
-
     def __init__(self, context: Context) -> None:
         self.session = context.db_session
 
@@ -48,7 +46,6 @@ class SmoothingBoxRepository:
     def add_entry(
         self, box: SmoothingBox, transaction_id: UUID, direction: str, origin: str, value: Decimal
     ) -> BoxEntry:
-        """Lança na caixinha e já move o saldo dela, na mesma transação."""
         if direction == LedgerEntry.CREDITO:
             box.balance = box.balance + value
         else:
@@ -86,13 +83,6 @@ class SmoothingBoxRepository:
         )
 
     def get_window_incomes(self, box_id: UUID, before: Optional[date], window_size: int) -> List[Decimal]:
-        """A renda dos últimos `window_size` dias já fechados antes de `before`.
-
-        Lê o que está GRAVADO em `daily_closing`, não o ledger: a média de
-        um dia usa números congelados, e um estorno antigo não muda um
-        fechamento que já aconteceu. `before=None` quer dizer "os últimos,
-        sem corte" — é a média que valeria para o próximo dia a fechar.
-        """
         query = self.session.query(DailyClosing.income).filter(DailyClosing.box_id == box_id)
 
         if before is not None:
@@ -117,11 +107,6 @@ class SmoothingBoxRepository:
         closing.transaction_id = transaction_id
 
         self.session.add(closing)
-
-        # Flush aqui de propósito: se outra requisição gravou o mesmo dia
-        # por um caminho que escapou da trava, o UNIQUE(box_id,
-        # reference_date) estoura AGORA, e o controller ainda consegue
-        # desfazer tudo e responder com o fechamento que ganhou.
         self.session.flush()
 
         return closing
@@ -137,6 +122,4 @@ class SmoothingBoxRepository:
         if end_date is not None:
             query = query.filter(DailyClosing.reference_date <= end_date)
 
-        # Um a mais que o limite, só pra saber se existe próxima página —
-        # o mesmo truque da listagem de sample entities.
         return query.order_by(DailyClosing.reference_date.desc()).limit(limit + 1).offset(offset).all()

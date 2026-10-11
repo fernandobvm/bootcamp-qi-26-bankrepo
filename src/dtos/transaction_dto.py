@@ -14,14 +14,6 @@ def optional_id(value: Optional[UUID]) -> Optional[str]:
 
 
 class TransactionDTO:
-    """Depósito, transferência, pagamento e extrato no JSON da resposta.
-
-    Toda resposta de operação é montada SÓ com o que ficou gravado: o
-    saldo vem do `balance_after` do lançamento, e não do saldo de agora.
-    É isso que deixa um reenvio da mesma chave, dias depois, receber
-    exatamente o corpo da primeira resposta.
-    """
-
     @staticmethod
     def deposit_to_dict(transaction: Transaction, ledger_entry: LedgerEntry) -> dict:
         return {
@@ -35,12 +27,6 @@ class TransactionDTO:
 
     @staticmethod
     def transfer_to_dict(transfer: Transaction, fee: Optional[Transaction], last_debit: LedgerEntry) -> dict:
-        """A transferência e a tarifa dela, numa resposta só.
-
-        Transferência isenta tem `fee` "0.00" e `fee_transaction_id`
-        nulo. O `balance_after` é o da origem depois de TUDO — o último
-        débito, que é o da tarifa quando ela existe.
-        """
         fee_value = Decimal("0.00")
         fee_transaction_id = None
         if fee is not None:
@@ -73,12 +59,6 @@ class TransactionDTO:
 
     @staticmethod
     def statement_entry_to_dict(ledger_entry: LedgerEntry, transaction: Transaction) -> dict:
-        """Uma linha do extrato, do ponto de vista da conta consultada.
-
-        A contraparte só existe na transferência: para quem mandou é a
-        conta de destino, para quem recebeu é a de origem. Depósito,
-        tarifa e pagamento têm o outro lado fora do banco.
-        """
         counterparty_account_id = None
         if transaction.type == Transaction.TRANSFER:
             if ledger_entry.direction == LedgerEntry.DEBITO:

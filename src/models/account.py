@@ -6,13 +6,6 @@ from models.customer import Customer
 
 
 class Account(Base):
-    """A conta: saldo e ciclo de vida, como no RFC.
-
-    O saldo é `Numeric(15, 2)`, que chega no Python como `Decimal` —
-    nunca `float`. A caixinha soma, multiplica e compara esse valor, e
-    um `float` erraria o centavo em silêncio.
-    """
-
     __tablename__ = "account"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

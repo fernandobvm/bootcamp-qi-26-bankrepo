@@ -7,8 +7,6 @@ from constants import SERVICE_NAME
 
 
 class HealthCheckResource:
-    """As duas rotas que respondem sem token: quem é este serviço, e se ele está vivo."""
-
     def on_get_home(self) -> JSONResponse:
         home = {"service": SERVICE_NAME, "id": str(os.getpid())}
 

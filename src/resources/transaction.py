@@ -7,13 +7,6 @@ from utils.schema_handler import SchemaHandler
 
 
 class TransactionResource:
-    """Depósito, transferência e pagamento.
-
-    As três respondem 201 também no reenvio com a mesma chave, com o
-    corpo da primeira vez: para quem chamou, o pedido deu certo uma vez
-    só, não importa quantas vezes ele foi mandado.
-    """
-
     @SchemaHandler.validate("post_deposit.json")
     def on_post_deposit(self, account_id: str, payload: dict) -> JSONResponse:
         controller = TransactionController()

@@ -6,19 +6,6 @@ from models.base import Base
 
 
 class Transaction(Base):
-    """Uma operação financeira; os lançamentos dela moram em `ledger_entry`.
-
-    `account_out_id` é a conta DONA da operação — é nela que a chave de
-    idempotência vale, `UNIQUE(account_out_id, idempotency_key)`. Na
-    transferência e no pagamento é a origem; no depósito, a conta que
-    recebe; na tarifa, quem paga; nas operações da caixinha (`BOX_*`), a
-    dona da caixinha. `account_in_id` só existe na transferência, quando
-    há uma segunda conta do banco envolvida.
-
-    Para que lado o dinheiro andou não se lê daqui: lê-se do `direction`
-    de cada `ledger_entry`.
-    """
-
     __tablename__ = "transaction"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

@@ -11,12 +11,6 @@ DEFAULT_PAGE = 0
 
 
 class SmoothingBoxResource:
-    """A porta de entrada HTTP da Caixinha de Equilíbrio.
-
-    Mesmo desenho do SampleEntityResource: confere o corpo, chama o
-    controller, devolve a resposta com o status. Nenhuma regra mora aqui.
-    """
-
     @SchemaHandler.validate("post_smoothing_box.json")
     def on_post(self, account_id: str, payload: dict) -> JSONResponse:
         controller = SmoothingBoxController()
@@ -39,11 +33,6 @@ class SmoothingBoxResource:
 
     @SchemaHandler.validate("post_smoothing_box_closing.json")
     def on_post_closing(self, account_id: str, payload: dict) -> JSONResponse:
-        """201 quando o dia foi fechado agora; 200 quando ele já estava fechado.
-
-        A diferença de status é a forma de o agendador saber, sem ler o
-        corpo, se a chamada dele fez alguma coisa ou só confirmou.
-        """
         controller = SmoothingBoxController()
         closing, created = controller.close_day(account_id, payload["reference_date"])
 
@@ -81,8 +70,6 @@ class SmoothingBoxResource:
 
     @SchemaHandler.validate("post_smoothing_box_withdrawal.json")
     def on_post_withdrawal(self, account_id: str, payload: dict) -> JSONResponse:
-        # O reenvio com a mesma chave também sai 201, com o corpo da
-        # primeira vez — o mesmo combinado das transferências do time.
         controller = SmoothingBoxController()
         withdrawal = controller.withdraw(account_id, payload)
 

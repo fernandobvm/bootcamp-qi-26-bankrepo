@@ -25,7 +25,6 @@ class TestWithdrawal:
         assert response["account_balance"] == "150.00"
 
     def test_decimal_values_stay_exact(self):
-        """0,10 + 0,20 tem que dar 0,30 — o teste que um float reprovaria."""
         account_id = account_with_box("1.00", account_balance="0.00")
 
         RequestGenerator.POST_smoothing_box_withdrawal(account_id, {"value": "0.1", "idempotency_key": str(uuid4())})
@@ -82,7 +81,6 @@ class TestWithdrawal:
         assert response["box_balance"] == "40.00"
 
     def test_concurrent_withdrawals_never_go_negative(self):
-        """Cinco pedidos de 30 numa caixinha de 100: só três cabem."""
         account_id = account_with_box("100.00")
 
         with ThreadPoolExecutor(max_workers=5) as pool:

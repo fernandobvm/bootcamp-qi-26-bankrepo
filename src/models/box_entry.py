@@ -7,12 +7,6 @@ from models.transaction import Transaction
 
 
 class BoxEntry(Base):
-    """O lançamento do lado da caixinha — o espelho do `ledger_entry` da conta.
-
-    O saldo da caixinha sempre pode ser refeito somando estas linhas, e o
-    `balance_after` de cada uma diz quanto havia logo depois dela.
-    """
-
     __tablename__ = "box_entry"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

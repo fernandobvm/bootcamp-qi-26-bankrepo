@@ -27,7 +27,6 @@ class TestSmoothingBoxCreate:
         assert response["retention_pct"] == 30
 
     def test_refuses_retention_out_of_range(self):
-        """20 a 80 por cento: abaixo disso a caixinha não junta nada, acima não sobra renda."""
         account_id = BankSeed.create_account()
 
         for retention_pct in [19, 81, 0, 100]:

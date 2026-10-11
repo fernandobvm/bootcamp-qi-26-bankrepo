@@ -3,9 +3,6 @@ from uuid import uuid4
 
 from tests.utils import BankApi, PayloadGenerator, RequestGenerator
 
-# A regra da tarifa, escrita aqui à mão e não importada de src/: o teste
-# cobra o contrato de fora, como um cliente cobraria. As cinco primeiras
-# transferências do mês são isentas; depois, 1% do valor, mínimo R$ 1,00.
 FREE_TRANSFERS_PER_MONTH = 5
 
 
@@ -22,7 +19,6 @@ def transfer(account_out: str, account_in: str, value: str) -> dict:
 
 
 def use_free_transfers(account_out: str, account_in: str) -> None:
-    """Gasta a franquia do mês com transferências de R$ 1,00 — a próxima já paga tarifa."""
     for _ in range(FREE_TRANSFERS_PER_MONTH):
         assert transfer(account_out, account_in, "1.00")["fee"] == "0.00"
 
@@ -39,7 +35,6 @@ class TestTransfer:
         assert BankApi.balance(account_in) == "200.00"
 
     def test_insufficient_balance_changes_nothing(self):
-        """Transfere mais do que o saldo: 4xx e os dois saldos iguais a antes."""
         account_out, account_in = two_accounts("100.00", "50.00")
 
         status, response = RequestGenerator.POST_transfer(
@@ -276,7 +271,6 @@ class TestTransferFee:
 
 class TestTransferConcurrency:
     def test_concurrent_transfers_never_go_negative(self):
-        """Cinco transferências de 30 (ainda na franquia) numa conta de 100: só três cabem."""
         account_out, account_in = two_accounts("100.00")
 
         with ThreadPoolExecutor(max_workers=5) as pool:
@@ -295,11 +289,6 @@ class TestTransferConcurrency:
         assert BankApi.balance(account_in) == "90.00"
 
     def test_last_free_transfer_goes_to_exactly_one_request(self):
-        """Falta uma isenção e chegam três pedidos juntos: um sai grátis, dois pagam.
-
-        A contagem do mês acontece com a conta travada, então os três
-        fazem fila e cada um enxerga os anteriores.
-        """
         account_out, account_in = two_accounts("100.00")
         for _ in range(FREE_TRANSFERS_PER_MONTH - 1):
             transfer(account_out, account_in, "1.00")
@@ -319,12 +308,6 @@ class TestTransferConcurrency:
         assert BankApi.balance(account_out) == "64.00"
 
     def test_opposite_transfers_do_not_deadlock(self):
-        """A → B e B → A ao mesmo tempo: a trava em ordem de id faz uma esperar a outra.
-
-        Sem a ordem fixa, cada requisição travaria a própria origem e
-        ficaria esperando a outra conta — o PostgreSQL derrubaria uma
-        delas com deadlock, e o teste veria um 500.
-        """
         account_a, account_b = two_accounts("1000.00", "1000.00")
 
         def send(index: int):
@@ -337,7 +320,5 @@ class TestTransferConcurrency:
 
         assert [status for status, _ in results] == [201] * 20
 
-        # Cada lado mandou 10 × 10,00 e recebeu 10 × 10,00. Das dez que
-        # mandou, cinco foram isentas e cinco pagaram o mínimo de R$ 1,00.
         assert BankApi.balance(account_a) == "995.00"
         assert BankApi.balance(account_b) == "995.00"

@@ -5,7 +5,6 @@ from tests.utils import BankApi, PayloadGenerator, RandomGenerator, RequestGener
 
 ERROR_FIELDS = {"title", "description", "translation", "code"}
 
-
 class TestCustomerCreate:
     def test_creates_customer_with_an_empty_active_account(self):
         payload = PayloadGenerator.create_customer_payload()
@@ -23,7 +22,6 @@ class TestCustomerCreate:
         assert account["status"] == "ATIVA"
 
     def test_same_cpf_twice_is_refused(self):
-        """Cadastro único: o segundo POST com o mesmo CPF é barrado, no formato de erro do projeto."""
         document_number = RandomGenerator.generate_cpf()
         RequestGenerator.POST_customer(PayloadGenerator.create_customer_payload(document_number=document_number))
 
@@ -36,7 +34,6 @@ class TestCustomerCreate:
         assert ERROR_FIELDS <= set(response.keys())
 
     def test_concurrent_requests_with_the_same_cpf_create_one_customer(self):
-        """Cinco cadastros simultâneos do mesmo CPF: o UNIQUE deixa passar um só."""
         document_number = RandomGenerator.generate_cpf()
 
         with ThreadPoolExecutor(max_workers=5) as pool:

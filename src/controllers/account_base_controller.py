@@ -11,14 +11,6 @@ from repositories import AccountRepository, TransactionRepository
 
 
 class AccountBaseController(BaseController):
-    """O que todo controller que mexe numa conta faz igual.
-
-    Conta, transações e caixinha passam pelas mesmas portas: achar a
-    conta (ou responder 404), exigir que ela esteja ATIVA, ler dinheiro
-    sem passar por `float` e calcular o `request_hash` da idempotência.
-    Cada regra mora aqui uma vez só, e um 404 de conta sai igual em
-    todas as rotas.
-    """
 
     def __init__(self, class_name: str) -> None:
         super().__init__(class_name)

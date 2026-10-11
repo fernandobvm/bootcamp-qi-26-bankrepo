@@ -8,29 +8,7 @@ from utils.logger import get_logger
 
 
 class RestConnector(metaclass=ABCMeta):
-    """O que todo connector tem em comum: como falar com outro serviço.
-
-    Este arquivo é pra chamada HTTP o que o database.py é pro banco: o
-    ÚNICO lugar que sabe COMO se fala com um serviço de fora. Quem
-    precisa de outro serviço não escreve requests.get() no meio do
-    código — cria um connector (veja o bankslip_connector.py) e chama
-    um método com nome de gente.
-
-    O que mora aqui, e por quê:
-
-      • o ENDEREÇO vem de configuração, nunca escrito no código: o mesmo
-        connector fala com o mock na sua máquina e com o serviço real em
-        produção, mudando só uma variável de ambiente;
-
-      • o TIMEOUT é obrigatório. Requisição sem prazo é uma forma de
-        travar a SUA api: se o outro serviço parar de responder, cada
-        pedido seu fica pendurado esperando pra sempre;
-
-      • TODA ida e volta aparece no log, com o tempo que levou. Quando
-        algo der errado entre dois serviços, são estas linhas que contam
-        de que lado está o problema.
-    """
-
+    
     def __init__(self, class_name: str, base_url: str, timeout: int, internal_token: str) -> None:
         self.logger = get_logger(class_name)
         self.base_url = base_url
