@@ -34,3 +34,33 @@ class CustomerRepository:
 
     def get_by_document_number(self, document_number: str) -> Optional[Customer]:
         return self.session.query(Customer).filter(Customer.document_number == document_number).first()
+
+    def get_by_email(self, email: str) -> Customer:
+        return self.session.query(Customer).filter(Customer.email == email).first()
+    
+    def list_page(self, limit: int, offset: int, filters: dict) -> list:
+        query = self.session.query(Customer)
+
+        name = filters.get("name")
+        if name is not None:
+            query = query.filter(Customer.name.ilike(f"%{name}%"))
+
+        email = filter.get("email")
+        if email is not None:
+            query = query.filter(Customer.email == email)
+
+        document_number = filters.get("document_number")
+        if document_number is not None:
+            query = query.filter(Customer.document_number == document_number)
+
+        birthdate_from = filters.get("birthdate_from")
+        if birthdate_from is not None:
+            query = query.filter(Customer.birthdate >= birthdate_from)
+
+        birthdate_to = filters.get("birthdate_to")
+        if birthdate_to is not None:
+            query = query.filter(Customer.birthdate <= birthdate_to)
+
+        query = query.order_by(Customer.created_at.desc(), Customer.id.desc())
+
+        return query.limit(limit + 1).offset(offset).all()
