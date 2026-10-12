@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Time** | Fernando Mendes · Victor Kazunori · Matheus Reis |
-| **Data** | 10/10/2026 |
-| **Versão** | 3 |
+| **Data** | 12/10/2026 |
+| **Versão** | 4 |
 
 ## Contextualização
 
@@ -81,15 +81,15 @@ Alternativas descartadas:
 | `POST` | `/accounts/{account_id}/` <br> `deposits` | Credita dinheiro que chega de fora do banco. <br> Idempotente: `UNIQUE(account_out_id, idempotency_key)` | `value` (texto, > 0, até duas casas: `"50.00"`) e `idempotency_key` no corpo | `201` com `transaction_id` e `balance_after` (reenvio com a mesma chave devolve o `201` original); `400` `EB000001` valor inválido; `404` `EB001002` conta inexistente; `409` `EB001006` conta não está `ATIVA`; `409` `EB001007` chave reutilizada com outro payload |
 | `POST` | `/accounts/{account_id_out}/` <br> `transfers` | Realiza uma transferência para outra conta do banco. **Tarifa**: as 5 primeiras do mês são isentas; depois, 1% do valor com mínimo de R$ 1,00, cobrado da origem no mesmo commit. <br> Idempotente: `UNIQUE(account_out_id, idempotency_key)` | `account_id_out` no caminho, `account_id_in`, `value` e `idempotency_key` no corpo | `201` com `transaction_id`, `fee` (`"0.00"` quando isenta), `fee_transaction_id` (nulo quando isenta), `total_debited` e `balance_after` (reenvio com a mesma chave devolve o `201` original); `400` `EB000001` valor inválido; `404` `EB001002` conta de origem inexistente; `404` `EB001005` conta de destino inexistente; `409` `EB001006` alguma das contas não está `ATIVA`; `409` `EB001007` chave reutilizada com outro payload; `422` `EB001008` saldo não cobre valor + tarifa; `422` `EB001009` origem e destino são a mesma conta |
 | `POST` | `/accounts/{account_id_out}/` <br> `payments` | Realiza um pagamento para fora do banco. Sem tarifa. <br> Idempotente: `UNIQUE(account_out_id, idempotency_key)` | `account_id_out` no caminho, `value` e `idempotency_key` no corpo | `201` com `transaction_id` e `balance_after` (reenvio com a mesma chave devolve o `201` original); `400` `EB000001` valor inválido; `404` `EB001002` conta de origem inexistente; `409` `EB001006` conta não está `ATIVA`; `409` `EB001007` chave reutilizada com outro payload; `422` `EB001008` saldo insuficiente |
-| `GET` | `/accounts/{account_id}/` <br> `transactions` | Extrato **paginado** da conta, do lançamento mais novo para o mais antigo | `account_id` no caminho; `start_date`, `end_date` (opcionais, dias de São Paulo), `limit` (padrão 10, até 100), `page` (padrão 0) | `200` com `data`, `limit`, `page` e `is_last_page`; `400` `EB000001` parâmetro fora do formato ou desconhecido; `400` `EB000010` `start_date` posterior a `end_date`; `404` `EB001002` conta inexistente; `409` `EB001006` conta não está `ATIVA` |
+| `GET` | `/accounts/{account_id}/` <br> `transactions` | Extrato **paginado** da conta, do lançamento mais novo para o mais antigo | `account_id` no caminho; `start_date`, `end_date` (opcionais, dias de São Paulo), `limit` (padrão 10, de 1 a 100), `page` (padrão 0) | `200` com `data`, `limit`, `page` e `is_last_page`; `400` `EB000001` parâmetro fora do formato ou desconhecido (inclui `limit` 0 ou acima de 100); `400` `EB000010` data inexistente ou `start_date` posterior a `end_date`; `404` `EB001002` conta inexistente; `409` `EB001006` conta não está `ATIVA` |
 | `POST` | `/accounts/{account_id}/smoothing-box` | Ativa a caixinha da conta. Repetir não cria outra: `UNIQUE(account_id)` | `retention_pct` (inteiro de 20 a 80, padrão 50) | `201` com `box_key`, `status`, `activated_on`; `400 EB000001` corpo fora do formato ou `retention_pct` fora de 20–80; `404 EB001002` conta inexistente; `409 EB002002` a conta já tem caixinha; `409 EB001006` conta não está `ATIVA` |
 | `GET` | `/accounts/{account_id}/smoothing-box` | Devolve saldo, percentual, status, a média atual, o piso, o teto e o último dia fechado | `account_id` no caminho | `200`; `404 EB001002` conta inexistente; `404 EB002001` conta sem caixinha |
 | `PATCH` | `/accounts/{account_id}/smoothing-box` | Muda o percentual e/ou pausa e retoma (`ACTIVE` ↔ `PAUSED`). Vale a partir do próximo fechamento | `retention_pct`, `status` | `200`; `400 EB000001`; `404 EB001002`; `404 EB002001`; `409 EB002006` pedido para o status em que ela já está |
 | `POST` | `/accounts/{account_id}/smoothing-box/closings` | Fecha um dia: calcula a faixa e retém ou libera. **Idempotente** por `UNIQUE(box_id, reference_date)`: repetir devolve o mesmo fechamento, sem mover dinheiro | `reference_date` (`AAAA-MM-DD`) | `201` fechamento novo; `200` o dia já estava fechado (mesmo corpo da primeira vez); `400 EB000001`; `404 EB001002`; `404 EB002001`; `409 EB001006` conta não está `ATIVA`; `409 EB002003` o dia anterior não foi fechado, com `next_reference_date` no corpo; `422 EB002004` `reference_date` é hoje, futuro ou anterior a `activated_on` |
-| `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` data fora do formato; `400 EB000010` `start_date` > `end_date`; `404 EB001002`; `404 EB002001` |
+| `GET` | `/accounts/{account_id}/smoothing-box/closings` | Histórico de fechamentos: renda, média, faixa, valor calculado e valor movido de cada dia | `start_date`, `end_date` (opcionais), `limit`, `page` | `200` com a página; `400 EB000001` parâmetro fora do formato ou desconhecido; `400 EB000010` data inexistente ou `start_date` > `end_date`; `404 EB001002`; `404 EB002001` |
 | `POST` | `/accounts/{account_id}/smoothing-box/withdrawals` | Resgata da caixinha para a conta. **Idempotente** pela `idempotency_key`, no mesmo mecanismo das transferências | `value` (texto, > 0, até duas casas: `"50.00"`), `idempotency_key` | `201` com `transaction_id` e saldos (reenvio com a mesma chave e o mesmo corpo devolve o `201` original); `400 EB000001` valor ≤ 0, fora do formato ou com mais de duas casas; `404 EB001002`; `404 EB002001`; `409 EB001006` conta não está `ATIVA`; `409 EB001007` mesma chave com corpo diferente; `422 EB002005` saldo da caixinha insuficiente, com o saldo atual no corpo |
 
-**Idempotência**: as operações financeiras iniciadas pelo cliente (deposits, transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. A chave vale por conta (a conta dona da operação, `account_out_id`) e para uma operação só. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente, inclusive em outra operação, resulta em `409 EB001007`; a comparação usa o `request_hash` do pedido já normalizado (`"50"` e `"50.00"` são o mesmo pedido). A tarifa e o fechamento do dia não recebem chave do cliente: a tarifa usa a chave determinística `fee:{transaction_id}` e `UNIQUE(related_transaction_id)`; o fechamento, `UNIQUE(box_id, reference_date)` e a chave `closing:{box_id}:{reference_date}`.
+**Idempotência**: as operações financeiras iniciadas pelo cliente (deposits, transfers, payments e o resgate da caixinha em `withdrawals`) exigem o campo `idempotency_key` no corpo. A chave vale por conta (a conta dona da operação, `account_out_id`) e para uma operação só. Requisições repetidas com a mesma chave devem retornar o mesmo resultado da primeira execução, sem gerar uma nova transação. O uso da mesma chave com payload diferente, inclusive em outra operação, resulta em `409 EB001007`; a comparação usa o `request_hash` do pedido já normalizado (`"50"` e `"50.00"` são o mesmo pedido). A chave é procurada depois da trava e antes de conferir status e saldo: o reenvio de um pedido que já deu certo devolve o `201` original mesmo que a conta tenha sido suspensa depois. Um pedido recusado (`404`, `409 EB001006`, `422`) não grava nada, então a mesma chave pode ser reenviada e é avaliada de novo. A tarifa e o fechamento do dia não recebem chave do cliente: a tarifa usa a chave determinística `fee:{transaction_id}` e `UNIQUE(related_transaction_id)`; o fechamento, `UNIQUE(box_id, reference_date)` e a chave `closing:{box_id}:{reference_date}`.
 
 Todas as rotas, menos `/` e `/health_check`, exigem o cabeçalho do token interno; sem ele ou com valor errado, a resposta é `403 EB000002`. Valores monetários em `numeric(15,2)`, nunca `float`. Datas no fuso `America/Sao_Paulo`.
 
@@ -101,7 +101,7 @@ Todo erro responde no formato padrão do projeto (`title`, `description`, `trans
 |---|---|---|
 | `EB000001` | `400` | corpo ou parâmetros fora do formato (schema) |
 | `EB000002` | `403` | token interno ausente ou errado |
-| `EB000010` | `400` | parâmetros que se contradizem (`start_date` posterior a `end_date`) |
+| `EB000010` | `400` | parâmetro de consulta no formato certo, mas inválido: data que não existe (`2026-02-30`) ou `start_date` posterior a `end_date` |
 | `EB000404` | `404` | rota inexistente |
 | `EB000405` | `405` | a rota existe, mas não aceita o método |
 | `EB000500` | `500` | erro inesperado |
@@ -304,7 +304,7 @@ sequenceDiagram
 
 **Ciclo de vida da conta — `PATCH /accounts/{account_id}`**
 
-A conta nasce `ATIVA` no `POST /customers`. Só uma conta `ATIVA` deposita, transfere, recebe, paga, consulta o extrato e usa a caixinha (`409 EB001006` nas outras). A mudança trava a conta e, ao encerrar, a caixinha, na mesma ordem das outras operações.
+A conta nasce `ATIVA` no `POST /customers`. Só uma conta `ATIVA` deposita, transfere, recebe, paga, consulta o extrato, ativa a caixinha, fecha o dia e resgata (`409 EB001006` nas outras). Consultar a conta, consultar e alterar a caixinha (`GET`/`PATCH`) e ver o histórico de fechamentos funcionam em qualquer status. Como o resgate exige conta `ATIVA`, encerrar uma conta `SUSPENSA` com saldo na caixinha pede reativar, resgatar, transferir ou pagar o saldo e só então encerrar. A mudança trava a conta e, ao encerrar, a caixinha, na mesma ordem das outras operações.
 
 ```mermaid
 stateDiagram-v2
@@ -335,6 +335,10 @@ sequenceDiagram
     API->>DB: BEGIN
     API->>DB: SELECT account WHERE id IN (out, in) ORDER BY id FOR UPDATE
     Note over DB: trava as duas linhas em ordem de id (evita deadlock)
+    opt conta de origem inexistente
+        API->>DB: ROLLBACK
+        API-->>S: 404 EB001002 conta de origem inexistente
+    end
     API->>DB: SELECT transaction WHERE account_out_id = out AND idempotency_key = k
     alt chave já usada
         alt mesmo payload (request_hash igual)
@@ -345,9 +349,9 @@ sequenceDiagram
             API-->>S: 409 EB001007 chave reutilizada com outro payload
         end
     else chave nova
-        alt origem ou destino inexistente
+        alt destino inexistente (ou account_id_in que nem é UUID)
             API->>DB: ROLLBACK
-            API-->>S: 404 EB001002 (origem) ou EB001005 (destino)
+            API-->>S: 404 EB001005 conta de destino inexistente
         else alguma conta não está ATIVA
             API->>DB: ROLLBACK
             API-->>S: 409 EB001006 conta inativa
@@ -414,7 +418,7 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     S->>API: GET /accounts/{account_id}/transactions (start_date, end_date, limit, page opcionais)
-    API->>API: valida formato das datas (senão 400 EB000001) e start_date <= end_date (senão 400 EB000010)
+    API->>API: valida formato dos parâmetros (senão 400 EB000001), data existente e start_date <= end_date (senão 400 EB000010)
     API->>DB: SELECT status FROM account WHERE id = account_id
     alt conta inexistente
         API-->>S: 404 EB001002 conta inexistente
@@ -497,7 +501,7 @@ sequenceDiagram
     API-->>Ag: 201 {closing_key, band, income, baseline, lower_bound, upper_bound, amount_calculated, amount_moved}
 ```
 
-1. Valida o corpo; `reference_date` precisa ser um dia já encerrado (`422 EB002005` antes de qualquer
+1. Valida o corpo; `reference_date` precisa ser um dia já encerrado (`422 EB002004` antes de qualquer
    trava) e, depois de ler a caixinha, não anterior a `activated_on` (o mesmo `422`).
 2. Trava a conta e depois a caixinha, **sempre nessa ordem** — a mesma do resgate. A transferência do
    time trava só a conta, então espera o fechamento terminar (milissegundos) e nunca forma ciclo.
@@ -535,9 +539,13 @@ sequenceDiagram
 
 **Resgatar — caminho feliz**
 
-1. Valida `value` > 0 e procura a `transaction` pela `idempotency_key`. Não há.
-2. Trava a conta e depois a caixinha (mesma ordem do fechamento).
-3. O saldo da caixinha cobre o valor. Grava `transaction` `BOX_WITHDRAWAL`, o débito na caixinha, o
+1. Valida `value` > 0 (senão `400 EB000001`).
+2. Trava a conta e depois a caixinha (mesma ordem do fechamento); conta inexistente `404 EB001002`,
+   sem caixinha `404 EB002001`.
+3. Procura a `transaction` pela `idempotency_key` com as travas já tomadas. Achou com o mesmo corpo:
+   devolve o `201` original; com outro corpo: `409 EB001007`. Não há: confere a conta `ATIVA`
+   (`409 EB001006`).
+4. O saldo da caixinha cobre o valor. Grava `transaction` `BOX_WITHDRAWAL`, o débito na caixinha, o
    crédito na conta e atualiza os dois saldos. Confirma e responde `201`.
 
 **Resgatar — falha: saldo da caixinha insuficiente, com fechamento concorrente**
