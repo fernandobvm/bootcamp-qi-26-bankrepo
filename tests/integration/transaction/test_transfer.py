@@ -1,7 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from uuid import uuid4
 
-from tests.utils import BankApi, PayloadGenerator, RequestGenerator
+from tests.utils import BankApi, BankSeed, PayloadGenerator, RequestGenerator
 
 FREE_TRANSFERS_PER_MONTH = 5
 
@@ -267,6 +268,23 @@ class TestTransferFee:
             transfer(account_out, account_in, "1.00")
 
         assert transfer(account_in, account_out, "1.00")["fee"] == "0.00"
+
+    def test_allowance_resets_at_the_turn_of_the_month(self):
+        """As 5 do mês passado, a última às 23:59 de São Paulo, não gastam a franquia deste mês."""
+        account_out, account_in = two_accounts("100.00")
+        last_day_of_previous_month = BankSeed.today().replace(day=1) - timedelta(days=1)
+        for _ in range(FREE_TRANSFERS_PER_MONTH):
+            BankSeed.add_sent_transfer(account_out, account_in, last_day_of_previous_month, hour=23, minute=59)
+
+        assert transfer(account_out, account_in, "10.00")["fee"] == "0.00"
+
+    def test_month_starts_at_midnight_in_sao_paulo(self):
+        account_out, account_in = two_accounts("100.00")
+        first_day_of_month = BankSeed.today().replace(day=1)
+        for _ in range(FREE_TRANSFERS_PER_MONTH):
+            BankSeed.add_sent_transfer(account_out, account_in, first_day_of_month, hour=0, minute=0)
+
+        assert transfer(account_out, account_in, "10.00")["fee"] == "1.00"
 
 
 class TestTransferConcurrency:

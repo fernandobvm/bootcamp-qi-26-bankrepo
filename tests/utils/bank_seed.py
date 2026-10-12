@@ -111,6 +111,31 @@ class BankSeed:
             engine.dispose()
 
     @staticmethod
+    def add_sent_transfer(account_out_id: str, account_in_id: str, day: date, hour: int = 12, minute: int = 0) -> None:
+        """Uma TRANSFER já gravada, enviada às `hour`:`minute` de São Paulo do dia `day`."""
+        engine = BankSeed._engine()
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO transaction (type, account_out_id, account_in_id, value, idempotency_key, request_hash, created_at) "
+                        "VALUES ('TRANSFER', :out_id, :in_id, 1.00, :key, :hash, "
+                        "(CAST(:day AS date) + make_interval(hours => :hour, mins => :minute)) AT TIME ZONE 'America/Sao_Paulo')"
+                    ),
+                    {
+                        "out_id": account_out_id,
+                        "in_id": account_in_id,
+                        "key": str(uuid4()),
+                        "hash": "0" * 64,
+                        "day": day,
+                        "hour": hour,
+                        "minute": minute,
+                    },
+                )
+        finally:
+            engine.dispose()
+
+    @staticmethod
     def create_box(
         account_id: str,
         activated_on: date,
