@@ -9,9 +9,6 @@ SERVICE_NAME = os.environ.get("SERVICE_NAME", "bootcamp-api")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
-BANKSLIP_API_URL = os.environ.get("BANKSLIP_API_URL", "http://localhost:8080")
-BANKSLIP_API_INTERNAL_TOKEN = os.environ.get("BANKSLIP_API_INTERNAL_TOKEN", "default_token")
-BANKSLIP_API_TIMEOUT = int(os.environ.get("BANKSLIP_API_TIMEOUT", "5"))
 BANK_TIMEZONE = "America/Sao_Paulo"
 
 FREE_TRANSFERS_PER_MONTH = 5
@@ -36,5 +33,5 @@ def check_variables():
         raise EnvironmentError(
             f"Faltam variáveis de ambiente: {', '.join(missing)}. "
             "Rodando com 'docker compose up' elas já vêm preenchidas. "
-            "Fora do Docker, copie o .env.example para .env."
+            "Fora do Docker, defina DATABASE_URL e INTERNAL_TOKEN no ambiente."
         )

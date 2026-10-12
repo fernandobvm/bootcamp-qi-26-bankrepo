@@ -136,7 +136,7 @@ pytest -v tests/integration/transaction/test_transfer.py
 pytest -k fee                                     # só os testes com "fee" no nome
 ```
 
-O resultado esperado é `115 passed`.
+O resultado esperado é `117 passed`.
 
 Os testes usam por padrão a API em `0.0.0.0:3000`, o token
 `default_token` e o banco em

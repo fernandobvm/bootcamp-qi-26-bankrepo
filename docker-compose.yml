@@ -11,9 +11,9 @@
 # valor padrao, escrito no proprio ${VARIAVEL:-padrao}. Le-se assim:
 # "use o que estiver na variavel VARIAVEL; se ela nao existir, use padrao".
 #
-# O .env continua valendo, e agora e OPCIONAL: se voce criar um (copiando
-# o .env.example), o compose le esse arquivo e o que estiver la ganha do
-# padrao. E o jeito de trocar uma porta ocupada ou o token, sem editar
+# O .env continua valendo, e agora e OPCIONAL: se voce criar um na raiz
+# (exemplo no README, secao 3), o compose le esse arquivo e o que estiver
+# la ganha do padrao. E o jeito de trocar uma porta ocupada ou o token, sem editar
 # este arquivo.
 
 services:
@@ -35,13 +35,6 @@ services:
       # A senha que protege os endpoints internos. O padrao vale pra
       # estudar; num sistema de verdade, isso nunca teria valor padrao.
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-default_token}
-      # A API de boletos (assunto do sabado 4). Variavel que nao esta
-      # nesta lista NAO CHEGA no container: o compose repassa o que
-      # esta escrito aqui, e mais nada. Sem estas tres linhas, mexer
-      # nos BANKSLIP_* do .env nao teria efeito nenhum aqui dentro.
-      BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://localhost:8080}
-      BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
-      BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
     volumes:
       # Monta o codigo pra dentro do container: salvou o arquivo,
       # a API recarrega sozinha (o --reload ali embaixo).
