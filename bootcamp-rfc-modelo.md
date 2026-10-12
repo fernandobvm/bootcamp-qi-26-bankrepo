@@ -356,7 +356,8 @@ sequenceDiagram
             API->>DB: ROLLBACK
             API-->>S: 409 EB001006 conta inativa
         else saldo da origem < value + tarifa
-            Note over API: tarifa = 0 se a origem fez menos de 5 TRANSFER no mês, senão max(1% × value, R$ 1,00)
+            API->>DB: SELECT count(*) FROM transaction WHERE type = TRANSFER AND account_out_id = out AND created_at >= dia 1º 00:00 de São Paulo
+            Note over API: tarifa = 0 se a contagem for menor que 5, senão max(1% × value, R$ 1,00)
             API->>DB: ROLLBACK
             API-->>S: 422 EB001008 saldo insuficiente
         else tudo ok
@@ -370,7 +371,7 @@ sequenceDiagram
                 API->>DB: UPDATE account SET balance = balance - tarifa (out)
             end
             API->>DB: COMMIT (libera as travas)
-            API-->>S: 201 transaction_id, fee e balance_after
+            API-->>S: 201 transaction_id, fee, fee_transaction_id, total_debited e balance_after
         end
     end
 ```
