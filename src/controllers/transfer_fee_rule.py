@@ -4,7 +4,7 @@ from constants import FREE_TRANSFERS_PER_MONTH, TRANSFER_FEE_MINIMUM, TRANSFER_F
 
 
 def calculate_transfer_fee(value: Decimal, transfers_this_month: int) -> Decimal:
-    
+
     if transfers_this_month < FREE_TRANSFERS_PER_MONTH:
         return Decimal("0.00")
 

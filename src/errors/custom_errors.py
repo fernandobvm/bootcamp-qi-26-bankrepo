@@ -1,49 +1,6 @@
 from errors import QIException
 
 
-class InvalidDocumentNumber(QIException):
-    code = "QIT001003"
-
-    def __init__(self, document_number) -> None:
-        title = "Invalid Document Number"
-        http_status = 422
-        description = f"The document number {document_number} is not a valid CPF."
-        translation = "O CPF informado não é válido."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class DuplicatedDocumentNumber(QIException):
-    code = "QIT001004"
-
-    def __init__(self, document_number) -> None:
-        title = "Document Number already registered"
-        http_status = 409
-        description = f"There is already an entity with the document number {document_number}."
-        translation = "Já existe um cadastro com este CPF."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class DuplicatedEmail(QIException):
-    code = "QIT001005"
-
-    def __init__(self, email) -> None:
-        title = "Email already registered"
-        http_status = 409
-        description = f"There is already an entity with the email {email}."
-        translation = "Já existe um cadastro com este e-mail."
-        super().__init__(title, self.code, http_status, description, translation)
-
-
-class InvalidBirthdate(QIException):
-    code = "QIT001007"
-
-    def __init__(self, birthdate) -> None:
-        title = "Invalid Birthdate"
-        http_status = 422
-        description = f"The birthdate {birthdate} is not a real date."
-        translation = "A data de nascimento informada não existe."
-        super().__init__(title, self.code, http_status, description, translation)
-
 class NotFoundCustomer(QIException):
     code = "EB001001"
 

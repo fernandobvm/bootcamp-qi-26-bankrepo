@@ -6,8 +6,6 @@ from errors import AccountHasBalance, AccountStatusTransitionNotAllowed, Invalid
 from models import Account
 from repositories import SmoothingBoxRepository
 
-# O ciclo de vida da conta: de onde se pode ir para onde. ENCERRADA não
-# tem saída — uma conta encerrada não volta, abre-se outra.
 ALLOWED_TRANSITIONS = {
     Account.ATIVA: [Account.SUSPENSA, Account.ENCERRADA],
     Account.SUSPENSA: [Account.ATIVA, Account.ENCERRADA],
@@ -22,14 +20,12 @@ class AccountController(AccountBaseController):
         self.smoothing_box_repository = SmoothingBoxRepository(self.context)
 
     def get(self, account_id: str) -> dict:
-        # Leitura sem trava: devolve o último saldo confirmado. Uma
-        # transferência em andamento não aparece pela metade.
+        # Sem trava: devolve o último saldo confirmado.
         account = self._get_account(account_id)
 
         return AccountDTO.obj_to_dict(account)
 
     def update_status(self, account_id: str, payload: dict) -> dict:
-        
         new_status = payload["status"]
 
         account = self._get_account(account_id, for_update=True)
@@ -55,7 +51,6 @@ class AccountController(AccountBaseController):
         return account_dto
 
     def list_statement(self, account_id: str, limit: int, offset: int, filters: dict) -> dict:
-        
         start_date = None
         if filters.get("start_date") is not None:
             start_date = self._parse_date("start_date", filters["start_date"], InvalidParameter)

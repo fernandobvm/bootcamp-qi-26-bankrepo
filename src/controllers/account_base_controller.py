@@ -18,8 +18,7 @@ class AccountBaseController(BaseController):
         self.transaction_repository = TransactionRepository(self.context)
 
     def _get_account(self, account_id: str, for_update: bool = False) -> Account:
-        # Um identificador que nem é UUID não pode ser de conta nenhuma:
-        # é 404, e não um 500 vindo do PostgreSQL reclamando do tipo.
+        # Texto que nem é UUID é 404, não um 500 do PostgreSQL.
         try:
             parsed_account_id = UUID(account_id)
         except ValueError:
@@ -37,22 +36,14 @@ class AccountBaseController(BaseController):
             raise AccountNotActive(account.id, account.status)
 
     def _parse_date(self, field_name: str, raw_date: str, error_class=InvalidSchema) -> date:
-        """Converte a data, ou recusa com 400.
-
-        O schema já cobrou o formato AAAA-MM-DD; quem sabe que fevereiro
-        não tem dia 30 é o calendário, e é aqui que "2026-02-30" para.
-        """
+        # O schema cobra o formato; o calendário recusa "2026-02-30".
         try:
             return date.fromisoformat(raw_date)
         except ValueError:
             raise error_class(f"{field_name} ({raw_date}) is not a real date")
 
     def _parse_money(self, field_name: str, raw_value: str) -> Decimal:
-        """Texto vira `Decimal` direto — o valor nunca passa por `float`.
-
-        O schema garante até duas casas decimais; aqui só falta recusar o
-        zero, que um `pattern` não sabe distinguir de "0.00".
-        """
+        # Texto vira Decimal sem passar por float; o pattern do schema aceita "0.00".
         try:
             value = Decimal(raw_value)
         except InvalidOperation:
@@ -64,12 +55,6 @@ class AccountBaseController(BaseController):
         return value.quantize(Decimal("0.01"))
 
     def _hash_request(self, normalized_request: dict) -> str:
-        """A impressão digital do pedido, para comparar reenvios da mesma chave.
-
-        Calculada sobre o pedido JÁ normalizado — o valor com duas casas,
-        o UUID em minúsculas —, para que "50" e "50.00" sejam o mesmo
-        pedido. A operação entra no hash: a mesma chave usada num
-        depósito e depois numa transferência é reuso, e dá 409.
-        """
+        # Sobre o pedido normalizado ("50" e "50.00" são o mesmo); a operação entra no hash.
         serialized = json.dumps(normalized_request, sort_keys=True)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()

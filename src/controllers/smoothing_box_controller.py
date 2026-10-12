@@ -79,7 +79,6 @@ class SmoothingBoxController(AccountBaseController):
         return box_dto
 
     def close_day(self, account_id: str, raw_reference_date: str) -> Tuple[dict, bool]:
-        
         reference_date = self._parse_date("reference_date", raw_reference_date)
 
         today = self.account_repository.get_today()
@@ -156,7 +155,6 @@ class SmoothingBoxController(AccountBaseController):
         }
 
     def withdraw(self, account_id: str, payload: dict) -> dict:
-        
         value = self._parse_money("value", payload["value"])
         idempotency_key = payload["idempotency_key"]
         request_hash = self._hash_request({"operation": Transaction.BOX_WITHDRAWAL, "value": f"{value:.2f}"})
@@ -200,7 +198,7 @@ class SmoothingBoxController(AccountBaseController):
     def _move_closing_amount(
         self, account: Account, box: SmoothingBox, reference_date: date, result: dict
     ) -> Optional[UUID]:
-        
+
         amount = result["amount_moved"]
 
         if amount <= 0:

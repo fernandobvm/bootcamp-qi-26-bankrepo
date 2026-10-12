@@ -19,14 +19,6 @@ class CustomerController(BaseController):
         self.account_repository = AccountRepository(self.context)
 
     def create(self, payload: dict) -> dict:
-        """Os passos seguem o fluxo "Cadastro de cliente e conta" do RFC.
-
-        A consulta pelo CPF antes do INSERT responde o caso comum com uma
-        mensagem clara. Quem garante de verdade é o UNIQUE(document_number):
-        duas requisições simultâneas com o mesmo CPF passam as duas pela
-        consulta, e a segunda esbarra no índice — o `except` abaixo é o
-        caminho dela.
-        """
         document_number = payload["document_number"]
 
         if not is_valid_cpf(document_number):
@@ -34,6 +26,8 @@ class CustomerController(BaseController):
 
         birth_date = self._parse_birth_date(payload["birth_date"])
 
+        # A consulta responde o caso comum; o pedido simultâneo que passar
+        # por ela esbarra no UNIQUE(document_number), no except abaixo.
         if self.customer_repository.get_by_document_number(document_number) is not None:
             raise DuplicatedCustomer(document_number)
 
@@ -70,12 +64,6 @@ class CustomerController(BaseController):
         return customer
 
     def _parse_birth_date(self, raw_birth_date: str) -> date:
-        """O schema cobrou AAAA-MM-DD; aqui o calendário e o relógio.
-
-        "2026-02-30" tem o formato certo e não existe, e uma data de
-        nascimento no futuro também não. As duas são pedido malformado,
-        400, como qualquer outro campo fora do formato.
-        """
         try:
             birth_date = date.fromisoformat(raw_birth_date)
         except ValueError:
